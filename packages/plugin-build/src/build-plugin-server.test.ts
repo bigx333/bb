@@ -176,6 +176,7 @@ describe("plugin server build", () => {
         dir,
         "0.0.0-test",
         await testToolchain(),
+        { fallbackResolve: () => undefined, externalizeBareImports: true },
       );
 
       const bundle = await readFile(jsPath, "utf8");

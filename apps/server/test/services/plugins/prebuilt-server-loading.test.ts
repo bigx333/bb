@@ -1,14 +1,19 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createConnection,
   migrate,
+  setExperiments,
   upsertInstalledPlugin,
   type DbConnection,
 } from "@bb/db";
-import { PLUGIN_SDK_MAJOR, PLUGIN_SDK_VERSION } from "@bb/domain";
+import {
+  defaultExperiments,
+  PLUGIN_SDK_MAJOR,
+  PLUGIN_SDK_VERSION,
+} from "@bb/domain";
 import type { Logger } from "@bb/logger";
 import { createAiServiceRegistry } from "../../../src/services/ai/ai-service-registry.js";
 import {
@@ -135,6 +140,11 @@ describe("prebuilt server bundle loading", () => {
     expect((globalThis as Record<string, unknown>).__prebuiltDistLoads).toBe(
       before + 1,
     );
+
+    await service.reload("gitdist");
+    expect((globalThis as Record<string, unknown>).__prebuiltDistLoads).toBe(
+      before + 2,
+    );
   });
 
   it("never prefers dist for path installs — edited source must win", async () => {
@@ -142,6 +152,106 @@ describe("prebuilt server bundle loading", () => {
     const entry = await service.installPath(rootDir);
     expect(entry.status).toBe("error");
     expect(entry.statusDetail).toContain("source must not load");
+  });
+
+  it("compiles path source into a reusable cache and rebuilds after edits", async () => {
+    const rootDir = await writePrebuiltPlugin("bb-plugin-pathcache");
+    const sourcePath = join(rootDir, "server.ts");
+    await writeFile(
+      sourcePath,
+      `const value: string = "first";
+export default function plugin() {
+  globalThis.__pathCacheValue = value;
+  globalThis.__pathCacheLoads = (globalThis.__pathCacheLoads ?? 0) + 1;
+}
+`,
+    );
+
+    const installed = await service.installPath(rootDir);
+    expect(installed.status).toBe("running");
+    expect((globalThis as Record<string, unknown>).__pathCacheValue).toBe(
+      "first",
+    );
+
+    const cacheRoot = join(workDir, "data", "plugins", "runtime", "server");
+    const firstFiles = await readdir(cacheRoot, { recursive: true });
+    const firstServer = firstFiles.find((file) => file.endsWith("server.js"));
+    expect(firstServer).toBeDefined();
+    const firstServerPath = join(cacheRoot, firstServer!);
+    const firstMtime = (await stat(firstServerPath)).mtimeMs;
+
+    await service.reload("pathcache");
+    expect((await stat(firstServerPath)).mtimeMs).toBe(firstMtime);
+    expect((globalThis as Record<string, unknown>).__pathCacheLoads).toBe(2);
+
+    await writeFile(
+      sourcePath,
+      `const value: string = "second";
+export default function plugin() {
+  globalThis.__pathCacheValue = value;
+  globalThis.__pathCacheLoads = (globalThis.__pathCacheLoads ?? 0) + 1;
+}
+`,
+    );
+    await service.reload("pathcache");
+
+    expect((globalThis as Record<string, unknown>).__pathCacheValue).toBe(
+      "second",
+    );
+    expect((globalThis as Record<string, unknown>).__pathCacheLoads).toBe(3);
+    const updatedFiles = await readdir(cacheRoot, { recursive: true });
+    expect(
+      updatedFiles.filter((file) => file.endsWith("server.js")),
+    ).toHaveLength(2);
+  });
+
+  it("uses JITI on the next load when the legacy loader experiment is enabled", async () => {
+    const rootDir = await writePrebuiltPlugin("bb-plugin-legacy-loader");
+    const sourcePath = join(rootDir, "server.ts");
+    await writeFile(
+      sourcePath,
+      `const value: string = "native";
+export default function plugin() {
+  globalThis.__loaderExperimentValue = value;
+}
+`,
+    );
+
+    const installed = await service.installPath(rootDir);
+    expect(installed.status).toBe("running");
+    expect((globalThis as Record<string, unknown>).__loaderExperimentValue).toBe(
+      "native",
+    );
+    const cacheRoot = join(workDir, "data", "plugins", "runtime", "server");
+    const before = (await readdir(cacheRoot, { recursive: true })).filter(
+      (file) => file.endsWith("server.js"),
+    );
+    expect(before).toHaveLength(1);
+
+    setExperiments(db, {
+      ...defaultExperiments,
+      legacyJitiPluginLoader: true,
+    });
+    await writeFile(
+      sourcePath,
+      `const value: string = "jiti";
+export default function plugin() {
+  globalThis.__loaderExperimentValue = value;
+}
+`,
+    );
+    expect((globalThis as Record<string, unknown>).__loaderExperimentValue).toBe(
+      "native",
+    );
+
+    await service.reload("legacy-loader");
+    expect((globalThis as Record<string, unknown>).__loaderExperimentValue).toBe(
+      "jiti",
+    );
+    const after = (await readdir(cacheRoot, { recursive: true })).filter(
+      (file) => file.endsWith("server.js"),
+    );
+    expect(after).toEqual(before);
   });
 
   it("pre-1.0: falls back to source when the dist SDK version differs within major 0", async () => {
