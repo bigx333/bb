@@ -86,6 +86,11 @@ export async function buildCachedPluginServer(args: {
   rootDir: string;
   cacheDir: string;
   bbVersion: string;
+  validatedConfig: {
+    serverEntry: string;
+    packageName: string;
+    pluginVersion: string;
+  };
   toolchain: () => Promise<PluginBuildToolchain>;
   runtimeImports: Record<string, { path: string; external?: boolean }>;
   fallbackResolve: (specifier: string) => string | undefined;
@@ -97,6 +102,7 @@ export async function buildCachedPluginServer(args: {
       await args.toolchain(),
       {
         outDir: args.cacheDir,
+        validatedConfig: args.validatedConfig,
         runtimeImports: args.runtimeImports,
         fallbackResolve: args.fallbackResolve,
         preserveSourceImportMetaUrl: true,

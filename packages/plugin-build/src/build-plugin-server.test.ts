@@ -134,6 +134,45 @@ describe("plugin server build", () => {
     });
   });
 
+  it("accepts runtime-validated server config without applying release asset validation", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "bb-plugin-server-runtime-"));
+    tempDirs.push(dir);
+    const serverEntry = join(dir, "server.ts");
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "bb-plugin-runtime-fixture",
+        version: "1.0.0",
+        bb: {
+          name: "Runtime fixture",
+          description: "Uses runtime branding validation.",
+          branding: { logo: { light: "./logo.svg" } },
+          server: "./server.ts",
+        },
+      }),
+    );
+    await writeFile(
+      join(dir, "logo.svg"),
+      '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>',
+    );
+    await writeFile(serverEntry, "export default function plugin() {}\n");
+
+    const { jsPath } = await buildPluginServer(
+      dir,
+      "0.0.0-test",
+      await testToolchain(),
+      {
+        validatedConfig: {
+          serverEntry,
+          packageName: "bb-plugin-runtime-fixture",
+          pluginVersion: "1.0.0",
+        },
+      },
+    );
+
+    expect(await readFile(jsPath, "utf8")).toContain("function plugin");
+  });
+
   describe("SDK subpath imports", () => {
     const manifest = {
       name: "bb-plugin-server-subpath-fixture",

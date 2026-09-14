@@ -1083,6 +1083,11 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
           rootDir: row.rootDir,
           cacheDir,
           bbVersion: deps.appVersion,
+          validatedConfig: {
+            serverEntry: manifest.serverEntry,
+            packageName: manifest.packageName,
+            pluginVersion: manifest.version,
+          },
           toolchain: () => getPluginBuildToolchain(deps),
           runtimeImports: {
             [PLUGIN_SDK_SPECIFIER]: {

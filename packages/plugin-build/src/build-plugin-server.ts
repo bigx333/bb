@@ -85,6 +85,7 @@ interface PluginServerBuildResult {
 export interface PluginServerBuildOptions {
   hostProvidedZod?: boolean;
   outDir?: string;
+  validatedConfig?: PluginServerConfig;
   runtimeImports?: Record<string, { path: string; external?: boolean }>;
   fallbackResolve?: (specifier: string) => string | undefined;
   preserveSourceImportMetaUrl?: boolean;
@@ -109,7 +110,7 @@ export async function buildPluginServer(
   options: PluginServerBuildOptions = {},
 ): Promise<PluginServerBuildResult> {
   const { serverEntry, packageName, pluginVersion } =
-    await readPluginServerConfig(rootDir);
+    options.validatedConfig ?? (await readPluginServerConfig(rootDir));
   const sourceRoot = await realpath(rootDir);
   const distDir = options.outDir ?? join(rootDir, "dist");
   await mkdir(distDir, { recursive: true });
