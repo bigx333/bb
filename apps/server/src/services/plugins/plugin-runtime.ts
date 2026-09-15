@@ -100,11 +100,7 @@ import type {
 import { createKeyedLock } from "../lib/async-deduper.js";
 import { runEventLoopWork } from "../system/event-loop-work.js";
 import { abortPluginToolCallsForPlugin } from "./plugin-tool-calls.js";
-import {
-  buildCachedPluginServer,
-  hashPluginServerSource,
-  pluginServerCacheDirectory,
-} from "./plugin-server-cache.js";
+import { buildCachedPluginServer } from "./plugin-server-cache.js";
 
 const serverRuntimeDir = dirname(fileURLToPath(import.meta.url));
 const pluginSdkRuntimePath = join(serverRuntimeDir, "plugin-sdk-runtime.js");
@@ -171,6 +167,7 @@ const availableZodRuntimePath = existsSync(zodRuntimePath)
 interface MutableRoot {
   id: number;
   epoch: number;
+  version: string;
 }
 
 const mutableRoots = new Map<string, MutableRoot>();
@@ -256,6 +253,13 @@ function mutableRootUrl(canonicalDir: string): string {
   return pathToFileURL(join(canonicalDir, "/")).href;
 }
 
+function detachCommonJsModule(entry: NodeModule): void {
+  const parent = entry.parent;
+  if (parent === null || parent === undefined) return;
+  const index = parent.children.indexOf(entry);
+  if (index >= 0) parent.children.splice(index, 1);
+}
+
 function evictCommonJsCache(canonicalDir: string): Map<string, NodeModule> {
   const prefix = join(canonicalDir, "/");
   const cache = createRequire(import.meta.url).cache;
@@ -263,29 +267,51 @@ function evictCommonJsCache(canonicalDir: string): Map<string, NodeModule> {
   for (const filename of Object.keys(cache)) {
     if (!filename.startsWith(prefix)) continue;
     const entry = cache[filename];
-    if (entry !== undefined) evicted.set(filename, entry);
+    if (entry !== undefined) {
+      evicted.set(filename, entry);
+      detachCommonJsModule(entry);
+    }
     delete cache[filename];
   }
   return evicted;
 }
 
-function bumpMutableRootGeneration(rootDir: string): () => void {
+function setMutableRootVersion(
+  rootDir: string,
+  version: string,
+): { rootUrl: string; rollback: () => void } {
   registerMutableRootHooks();
   const canonicalDir = mutableRootDir(rootDir);
   const rootUrl = mutableRootUrl(canonicalDir);
   const previous = mutableRoots.get(rootUrl);
+  if (previous?.version === version) {
+    return { rootUrl, rollback: () => {} };
+  }
   mutableRoots.set(rootUrl, {
     id: previous?.id ?? nextMutableRootId++,
     epoch: nextMutableRootEpoch++,
+    version,
   });
   const evicted = evictCommonJsCache(canonicalDir);
-  return () => {
-    if (previous === undefined) mutableRoots.delete(rootUrl);
-    else mutableRoots.set(rootUrl, previous);
-    const cache = createRequire(import.meta.url).cache;
-    for (const [filename, entry] of evicted) {
-      if (cache[filename] === undefined) cache[filename] = entry;
-    }
+  return {
+    rootUrl,
+    rollback: () => {
+      if (previous === undefined) mutableRoots.delete(rootUrl);
+      else mutableRoots.set(rootUrl, previous);
+      const cache = createRequire(import.meta.url).cache;
+      for (const [filename, entry] of evicted) {
+        if (cache[filename] !== undefined) continue;
+        cache[filename] = entry;
+        const parent = entry.parent;
+        if (
+          parent !== null &&
+          parent !== undefined &&
+          !parent.children.includes(entry)
+        ) {
+          parent.children.push(entry);
+        }
+      }
+    },
   };
 }
 
@@ -359,7 +385,6 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
   const REGISTRATION_MUTATION_KEY = "plugin-registration-mutations";
   const disposingPluginIds = new Set<string>();
   const builtinSourceWatchers: FSWatcher[] = [];
-  const ownedRootUrls = new Set<string>();
 
   const statuses = new Map<
     string,
@@ -1063,28 +1088,46 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
     return false;
   }
 
+  type ResolvedServerEntry = {
+    path: string;
+    digest: string;
+    loader: "jiti" | "cjs" | "esm";
+  };
+
+  async function packageScopeIsEsm(
+    entryPath: string,
+    rootDir: string,
+  ): Promise<boolean> {
+    const directories = [dirname(entryPath), rootDir];
+    for (const directory of new Set(directories)) {
+      try {
+        const parsed: unknown = JSON.parse(
+          await readFile(join(directory, "package.json"), "utf8"),
+        );
+        if (typeof parsed !== "object" || parsed === null) return false;
+        if ("type" in parsed) return Reflect.get(parsed, "type") === "module";
+      } catch {}
+    }
+    return false;
+  }
+
   async function resolveServerEntry(
     row: InstalledPluginRow,
     manifest: PluginManifest,
     legacyJitiPluginLoader: boolean,
-  ): Promise<string> {
-    async function buildSource(): Promise<string> {
-      const sourceDigest = await hashPluginServerSource(row.rootDir);
-      const cacheDir = pluginServerCacheDirectory({
-        dataDir: deps.dataDir,
-        pluginId: row.id,
-        rootDir: mutableRootDir(row.rootDir),
-        sourceDigest,
-        sdkVersion: PLUGIN_SDK_VERSION,
-        bbVersion: deps.appVersion,
-      });
-      return withArtifactLock(cacheDir, async () =>
+  ): Promise<ResolvedServerEntry> {
+    async function buildSource(
+      serverEntry = manifest.serverEntry,
+    ): Promise<ResolvedServerEntry> {
+      const built = await withArtifactLock(`server:${row.id}`, async () =>
         buildCachedPluginServer({
           rootDir: row.rootDir,
-          cacheDir,
+          dataDir: deps.dataDir,
+          pluginId: row.id,
+          sdkVersion: PLUGIN_SDK_VERSION,
           bbVersion: deps.appVersion,
           validatedConfig: {
-            serverEntry: manifest.serverEntry,
+            serverEntry: serverEntry.path,
             packageName: manifest.packageName,
             pluginVersion: manifest.version,
           },
@@ -1092,11 +1135,9 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
           runtimeImports: {
             [PLUGIN_SDK_SPECIFIER]: {
               path: pluginSdkRuntimeEntry,
-              external: true,
             },
             [LEGACY_PLUGIN_SDK_SPECIFIER]: {
               path: pluginSdkRuntimeEntry,
-              external: true,
             },
             "better-sqlite3": {
               path: runtimeRequire.resolve("better-sqlite3"),
@@ -1105,6 +1146,12 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
           },
           fallbackResolve: (specifier) => {
             try {
+              const resolved = import.meta.resolve(specifier);
+              return resolved.startsWith("file:")
+                ? fileURLToPath(resolved)
+                : resolved;
+            } catch {}
+            try {
               return runtimeRequire.resolve(specifier);
             } catch {
               return undefined;
@@ -1112,9 +1159,12 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
           },
         }),
       );
+      return { ...built, loader: "cjs" };
     }
     if (row.sourceKind === "path") {
-      return legacyJitiPluginLoader ? manifest.serverEntry : buildSource();
+      if (!legacyJitiPluginLoader) return buildSource();
+      const { digest } = await hashFile(manifest.serverEntry);
+      return { path: manifest.serverEntry, digest, loader: "jiti" };
     }
     if (
       row.sourceKind === "builtin" &&
@@ -1125,16 +1175,22 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
         artifact: "server",
       })
     ) {
-      if (legacyJitiPluginLoader) return manifest.serverEntry;
+      if (legacyJitiPluginLoader) {
+        const { digest } = await hashFile(manifest.serverEntry);
+        return { path: manifest.serverEntry, digest, loader: "jiti" };
+      }
       if (initializedSourceBuiltinIds.has(row.id)) return buildSource();
       initializedSourceBuiltinIds.add(row.id);
-      return manifest.serverEntry;
+      const { digest } = await hashFile(manifest.serverEntry);
+      return { path: manifest.serverEntry, digest, loader: "esm" };
     }
     const distJsPath = join(row.rootDir, "dist", "server.js");
     try {
       await stat(distJsPath);
     } catch {
-      return legacyJitiPluginLoader ? manifest.serverEntry : buildSource();
+      if (!legacyJitiPluginLoader) return buildSource();
+      const { digest } = await hashFile(manifest.serverEntry);
+      return { path: manifest.serverEntry, digest, loader: "jiti" };
     }
     let meta: { sdkMajor: number; sdkVersion: string } | null = null;
     try {
@@ -1146,9 +1202,18 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
       logger.warn(
         `plugin ${row.id}: ignoring prebuilt dist/server.js (built with SDK ${meta?.sdkVersion ?? "unknown"}, running SDK is ${PLUGIN_SDK_VERSION}) — loading from source`,
       );
-      return legacyJitiPluginLoader ? manifest.serverEntry : buildSource();
+      if (!legacyJitiPluginLoader) return buildSource();
+      const { digest } = await hashFile(manifest.serverEntry);
+      return { path: manifest.serverEntry, digest, loader: "jiti" };
     }
-    return distJsPath;
+    const { digest } = await hashFile(distJsPath);
+    if (legacyJitiPluginLoader) {
+      return { path: distJsPath, digest, loader: "jiti" };
+    }
+    if (await packageScopeIsEsm(distJsPath, row.rootDir)) {
+      return { path: distJsPath, digest, loader: "esm" };
+    }
+    return buildSource(distJsPath);
   }
 
   async function loadAppBundleCandidate(
@@ -1650,38 +1715,57 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
     });
     settingsDescriptorsRef.current = handle.settings.descriptors;
     const rollbackGenerations: Array<() => void> = [];
+    const candidateModuleRootUrls = new Set<string>();
     try {
-      const legacyJitiPluginLoader =
-        getExperiments(deps.db).legacyJitiPluginLoader;
+      const legacyJitiPluginLoader = getExperiments(
+        deps.db,
+      ).legacyJitiPluginLoader;
       const serverEntry = await resolveServerEntry(
         row,
         manifest,
         legacyJitiPluginLoader,
       );
       if (row.sourceKind === "path" || row.sourceKind === "builtin") {
-        rollbackGenerations.push(bumpMutableRootGeneration(row.rootDir));
-        ownedRootUrls.add(mutableRootUrl(mutableRootDir(row.rootDir)));
+        const mutation = setMutableRootVersion(
+          row.rootDir,
+          serverEntry.loader === "esm"
+            ? `esm:${serverEntry.digest}`
+            : `${serverEntry.loader}:${serverEntry.digest}:${nextMutableRootEpoch}`,
+        );
+        rollbackGenerations.push(mutation.rollback);
+        candidateModuleRootUrls.add(mutation.rootUrl);
       }
       const alias = {
         ...pluginSdkAlias,
         ...zodAliasFor({
           runtimePath: availableZodRuntimePath,
           sourceKind: row.sourceKind,
-          serverEntry,
+          serverEntry: serverEntry.path,
         }),
       };
       let mod: { default?: unknown };
-      if (legacyJitiPluginLoader) {
+      if (serverEntry.loader === "jiti") {
         const jiti = createJiti(import.meta.url, {
           moduleCache: false,
           ...(Object.keys(alias).length === 0 ? {} : { alias }),
         });
-        mod = (await jiti.import(serverEntry)) as { default?: unknown };
+        mod = (await jiti.import(serverEntry.path)) as { default?: unknown };
+      } else if (serverEntry.loader === "cjs") {
+        try {
+          mod = runtimeRequire(serverEntry.path) as { default?: unknown };
+        } finally {
+          const entry = runtimeRequire.cache[serverEntry.path];
+          if (entry !== undefined) detachCommonJsModule(entry);
+          delete runtimeRequire.cache[serverEntry.path];
+        }
       } else {
-        const serverRoot = dirname(serverEntry);
-        rollbackGenerations.push(bumpMutableRootGeneration(serverRoot));
-        ownedRootUrls.add(mutableRootUrl(mutableRootDir(serverRoot)));
-        mod = (await import(pathToFileURL(serverEntry).href)) as {
+        const mutation = setMutableRootVersion(
+          dirname(serverEntry.path),
+          `esm:${serverEntry.digest}`,
+        );
+        rollbackGenerations.push(mutation.rollback);
+        candidateModuleRootUrls.add(mutation.rootUrl);
+        mod = (await import(pathToFileURL(serverEntry.path).href)) as {
           default?: unknown;
         };
       }
@@ -1736,6 +1820,7 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
     const plugin: LoadedPlugin = {
       manifest,
       handle,
+      moduleRootUrls: candidateModuleRootUrls,
       services: handle.backgroundServices.map((record) => ({
         record,
         state: "stopped" as const,
@@ -1751,11 +1836,17 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
       await disposePluginInstance(row.id, previous);
       const hungAfterDispose = hungServices.get(row.id);
       if (hungAfterDispose !== undefined && hungAfterDispose.size > 0) {
+        for (const rollback of rollbackGenerations.reverse()) rollback();
         loaded.delete(row.id);
         deps.sharedPorts?.clearDeclarationsForOwner(row.id);
         discardCandidateHandle(handle);
         return hungServicesDetail(hungAfterDispose);
       }
+      releaseMutableRoots(
+        [...previous.moduleRootUrls].filter(
+          (rootUrl) => !candidateModuleRootUrls.has(rootUrl),
+        ),
+      );
     }
     disposeUnavailableProviderRegistrations(row.id);
     loaded.set(row.id, plugin);
@@ -1858,6 +1949,7 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
     if (!plugin) return;
     loaded.delete(id);
     await disposePluginInstance(id, plugin);
+    releaseMutableRoots(plugin.moduleRootUrls);
     hostArtifacts.delete(id);
     deps.sharedPorts?.clearDeclarationsForOwner(id);
   }
@@ -1870,8 +1962,6 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
     for (const id of pluginIds) {
       await withLifecycleLock(id, () => disposeOne(id));
     }
-    releaseMutableRoots(ownedRootUrls);
-    ownedRootUrls.clear();
   }
 
   async function loadAll(): Promise<void> {

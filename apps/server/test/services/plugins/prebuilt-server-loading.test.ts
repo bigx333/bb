@@ -1,4 +1,5 @@
 import { mkdtemp, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -98,6 +99,7 @@ describe("prebuilt server bundle loading", () => {
       JSON.stringify({
         name,
         version: "0.1.0",
+        type: "commonjs",
         bb: {
           name: "Prebuilt server fixture",
           description: "Prebuilt plugin server fixture.",
@@ -118,7 +120,7 @@ describe("prebuilt server bundle loading", () => {
     return rootDir;
   }
 
-  it("prefers a fresh dist/server.js for git installs (source never evaluated)", async () => {
+  it("loads a compatible ESM prebuild from a CommonJS plugin package", async () => {
     const rootDir = await writePrebuiltPlugin("bb-plugin-gitdist");
     upsertInstalledPlugin(db, {
       ...gitPersistence("https://github.com/acme/bb-plugin-gitdist", "v1"),
@@ -175,7 +177,7 @@ export default function plugin() {
 
     const cacheRoot = join(workDir, "data", "plugins", "runtime", "server");
     const firstFiles = await readdir(cacheRoot, { recursive: true });
-    const firstServer = firstFiles.find((file) => file.endsWith("server.js"));
+    const firstServer = firstFiles.find((file) => file.endsWith("server.cjs"));
     expect(firstServer).toBeDefined();
     const firstServerPath = join(cacheRoot, firstServer!);
     const firstMtime = (await stat(firstServerPath)).mtimeMs;
@@ -201,7 +203,7 @@ export default function plugin() {
     expect((globalThis as Record<string, unknown>).__pathCacheLoads).toBe(3);
     const updatedFiles = await readdir(cacheRoot, { recursive: true });
     expect(
-      updatedFiles.filter((file) => file.endsWith("server.js")),
+      updatedFiles.filter((file) => file.endsWith("server.cjs")),
     ).toHaveLength(2);
   });
 
@@ -219,12 +221,12 @@ export default function plugin() {
 
     const installed = await service.installPath(rootDir);
     expect(installed.status).toBe("running");
-    expect((globalThis as Record<string, unknown>).__loaderExperimentValue).toBe(
-      "native",
-    );
+    expect(
+      (globalThis as Record<string, unknown>).__loaderExperimentValue,
+    ).toBe("native");
     const cacheRoot = join(workDir, "data", "plugins", "runtime", "server");
     const before = (await readdir(cacheRoot, { recursive: true })).filter(
-      (file) => file.endsWith("server.js"),
+      (file) => file.endsWith("server.cjs"),
     );
     expect(before).toHaveLength(1);
 
@@ -240,18 +242,45 @@ export default function plugin() {
 }
 `,
     );
-    expect((globalThis as Record<string, unknown>).__loaderExperimentValue).toBe(
-      "native",
-    );
+    expect(
+      (globalThis as Record<string, unknown>).__loaderExperimentValue,
+    ).toBe("native");
 
     await service.reload("legacy-loader");
-    expect((globalThis as Record<string, unknown>).__loaderExperimentValue).toBe(
-      "jiti",
-    );
+    expect(
+      (globalThis as Record<string, unknown>).__loaderExperimentValue,
+    ).toBe("jiti");
     const after = (await readdir(cacheRoot, { recursive: true })).filter(
-      (file) => file.endsWith("server.js"),
+      (file) => file.endsWith("server.cjs"),
     );
     expect(after).toEqual(before);
+  });
+
+  it("bounds compiled artifacts and evicts loaded source modules", async () => {
+    const rootDir = await writePrebuiltPlugin("bb-plugin-reload-retention");
+    const sourcePath = join(rootDir, "server.ts");
+    const cacheRoot = join(workDir, "data", "plugins", "runtime", "server");
+    for (let generation = 0; generation < 8; generation += 1) {
+      await writeFile(
+        sourcePath,
+        `export default function plugin() { globalThis.__reloadRetention = ${generation}; }\n`,
+      );
+      if (generation === 0) await service.installPath(rootDir);
+      else await service.reload("reload-retention");
+    }
+
+    expect((globalThis as Record<string, unknown>).__reloadRetention).toBe(7);
+    const files = await readdir(cacheRoot, { recursive: true });
+    expect(files.filter((file) => file.endsWith("server.cjs"))).toHaveLength(4);
+    const cache = createRequire(import.meta.url).cache;
+    expect(
+      Object.keys(cache).filter((path) => path.startsWith(cacheRoot)),
+    ).toEqual([]);
+    expect(
+      Object.values(cache)
+        .flatMap((entry) => entry?.children ?? [])
+        .filter((entry) => entry.filename.startsWith(cacheRoot)),
+    ).toEqual([]);
   });
 
   it("pre-1.0: falls back to source when the dist SDK version differs within major 0", async () => {

@@ -1,46 +1,19 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, readdir, readlink, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, readdir, rename, rm, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import {
   buildPluginServer,
-  isIgnoredPluginDevPath,
   PLUGIN_TOOLCHAIN_PINS,
   type PluginBuildToolchain,
 } from "@bb/plugin-build";
 
-const PLUGIN_SERVER_RUNTIME_FORMAT_VERSION = 3;
+const PLUGIN_SERVER_RUNTIME_FORMAT_VERSION = 4;
+const RETAINED_PLUGIN_SERVER_ARTIFACTS = 4;
 
-async function hashFile(
-  path: string,
-  hash: ReturnType<typeof createHash>,
-): Promise<void> {
-  for await (const chunk of createReadStream(path)) hash.update(chunk);
-}
-
-export async function hashPluginServerSource(rootDir: string): Promise<string> {
+async function hashFile(path: string): Promise<string> {
   const hash = createHash("sha256");
-  async function visit(directory: string, prefix: string): Promise<void> {
-    const entries = await readdir(directory, { withFileTypes: true });
-    entries.sort((left, right) => left.name.localeCompare(right.name));
-    for (const entry of entries) {
-      const relativePath =
-        prefix.length === 0 ? entry.name : `${prefix}/${entry.name}`;
-      if (isIgnoredPluginDevPath(relativePath)) continue;
-      const path = join(directory, entry.name);
-      const stats = await lstat(path);
-      if (stats.isDirectory()) {
-        hash.update(`d\0${relativePath}\0`);
-        await visit(path, relativePath);
-      } else if (stats.isSymbolicLink()) {
-        hash.update(`l\0${relativePath}\0${await readlink(path)}\0`);
-      } else if (stats.isFile()) {
-        hash.update(`f\0${relativePath}\0${stats.mode & 0o777}\0`);
-        await hashFile(path, hash);
-      }
-    }
-  }
-  await visit(rootDir, "");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
   return hash.digest("hex");
 }
 
@@ -48,7 +21,7 @@ export function pluginServerCacheDirectory(args: {
   dataDir: string;
   pluginId: string;
   rootDir: string;
-  sourceDigest: string;
+  artifactDigest: string;
   sdkVersion: string;
   bbVersion: string;
   nodeVersion?: string;
@@ -56,7 +29,7 @@ export function pluginServerCacheDirectory(args: {
   const key = createHash("sha256")
     .update(
       JSON.stringify({
-        sourceDigest: args.sourceDigest,
+        artifactDigest: args.artifactDigest,
         rootDir: args.rootDir,
         sdkVersion: args.sdkVersion,
         bbVersion: args.bbVersion,
@@ -71,7 +44,7 @@ export function pluginServerCacheDirectory(args: {
 }
 
 async function isCompleteCacheEntry(directory: string): Promise<boolean> {
-  const files = ["server.js", "server.js.map", "server.meta.json"];
+  const files = ["server.cjs", "server.cjs.map", "server.meta.json"];
   const states = await Promise.all(
     files.map((file) =>
       stat(join(directory, file))
@@ -82,9 +55,37 @@ async function isCompleteCacheEntry(directory: string): Promise<boolean> {
   return states.every(Boolean);
 }
 
+async function prunePluginServerCache(
+  pluginCacheDir: string,
+  currentCacheDir: string,
+): Promise<void> {
+  const entries = await readdir(pluginCacheDir, { withFileTypes: true });
+  const candidates = await Promise.all(
+    entries
+      .filter(
+        (entry) =>
+          entry.isDirectory() &&
+          !entry.name.startsWith(".stage-") &&
+          join(pluginCacheDir, entry.name) !== currentCacheDir,
+      )
+      .map(async (entry) => {
+        const path = join(pluginCacheDir, entry.name);
+        return { path, mtimeMs: (await stat(path)).mtimeMs };
+      }),
+  );
+  candidates.sort((left, right) => right.mtimeMs - left.mtimeMs);
+  await Promise.all(
+    candidates
+      .slice(RETAINED_PLUGIN_SERVER_ARTIFACTS - 1)
+      .map(({ path }) => rm(path, { recursive: true, force: true })),
+  );
+}
+
 export async function buildCachedPluginServer(args: {
   rootDir: string;
-  cacheDir: string;
+  dataDir: string;
+  pluginId: string;
+  sdkVersion: string;
   bbVersion: string;
   validatedConfig: {
     serverEntry: string;
@@ -94,22 +95,55 @@ export async function buildCachedPluginServer(args: {
   toolchain: () => Promise<PluginBuildToolchain>;
   runtimeImports: Record<string, { path: string; external?: boolean }>;
   fallbackResolve: (specifier: string) => string | undefined;
-}): Promise<string> {
-  if (!(await isCompleteCacheEntry(args.cacheDir))) {
-    await buildPluginServer(
+}): Promise<{ path: string; digest: string }> {
+  const pluginCacheDir = dirname(
+    pluginServerCacheDirectory({
+      dataDir: args.dataDir,
+      pluginId: args.pluginId,
+      rootDir: args.rootDir,
+      artifactDigest: "pending",
+      sdkVersion: args.sdkVersion,
+      bbVersion: args.bbVersion,
+    }),
+  );
+  await mkdir(pluginCacheDir, { recursive: true });
+  const stageDir = await mkdtemp(join(pluginCacheDir, ".stage-"));
+  try {
+    const built = await buildPluginServer(
       args.rootDir,
       args.bbVersion,
       await args.toolchain(),
       {
-        outDir: args.cacheDir,
+        outDir: stageDir,
+        format: "cjs",
         validatedConfig: args.validatedConfig,
         runtimeImports: args.runtimeImports,
         fallbackResolve: args.fallbackResolve,
-        preserveSourceImportMetaUrl: true,
+        preserveSourceModuleLocation: true,
         externalizeSourceOutsideRoot: true,
-        externalizeBareImports: true,
       },
     );
+    const digest = await hashFile(built.jsPath);
+    const cacheDir = pluginServerCacheDirectory({
+      dataDir: args.dataDir,
+      pluginId: args.pluginId,
+      rootDir: args.rootDir,
+      artifactDigest: digest,
+      sdkVersion: args.sdkVersion,
+      bbVersion: args.bbVersion,
+    });
+    if (await isCompleteCacheEntry(cacheDir)) {
+      await prunePluginServerCache(pluginCacheDir, cacheDir);
+      return { path: join(cacheDir, "server.cjs"), digest };
+    }
+    try {
+      await rename(stageDir, cacheDir);
+    } catch (error) {
+      if (!(await isCompleteCacheEntry(cacheDir))) throw error;
+    }
+    await prunePluginServerCache(pluginCacheDir, cacheDir);
+    return { path: join(cacheDir, "server.cjs"), digest };
+  } finally {
+    await rm(stageDir, { recursive: true, force: true });
   }
-  return join(args.cacheDir, "server.js");
 }
