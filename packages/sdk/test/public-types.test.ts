@@ -413,6 +413,7 @@ type ExpectedThreadsKey =
   | "queuedMessages"
   | "reorderPinned"
   | "resolveMentions"
+  | "restoreEnvironment"
   | "retry"
   | "search"
   | "send"
