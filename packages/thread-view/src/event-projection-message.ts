@@ -165,7 +165,6 @@ export interface EventProjectionCommandMessage
   callId: string;
   command: string;
   cwd: string | null;
-  parsedIntents: EventProjectionToolParsedIntent[];
   source: string | null;
   output: string;
   exitCode: number | null;

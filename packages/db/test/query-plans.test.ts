@@ -28,6 +28,7 @@ import {
   listLatestOpenBackgroundTaskStateRowsForThread,
   listStoredConversationOutlineEventRows,
   listStoredEventRows,
+  listStoredEventRowsByIds,
   listStoredEventRowsByParentToolCallIds,
   listStoredTurnCompletedKeys,
   listTodoSnapshotEventRowsForThread,
@@ -273,6 +274,24 @@ describe("slow query index plans", () => {
       expect(queryPlanDetails({ db, ...ownerQuery! })).toContain(
         "USING INDEX events_provider_identity_idx",
       );
+    } finally {
+      db.$client.close();
+    }
+  });
+
+  it("resolves selected event payloads through their primary keys", () => {
+    const { db } = setup();
+    try {
+      const captured = captureStatements(db, () => {
+        expect(
+          listStoredEventRowsByIds(db, {
+            ids: Array.from({ length: 10 }, (_, index) => `event-${index}`),
+            maxInlineOutputChars: null,
+          }),
+        ).toEqual([]);
+      });
+      expect(captured).toHaveLength(1);
+      expect(queryPlanDetails({ db, ...captured[0]! })).toContain("(id=?)");
     } finally {
       db.$client.close();
     }

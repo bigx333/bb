@@ -120,15 +120,24 @@ selects that planned summary first and materializes only its children; unrelated
 summaries are not expanded to find a match. Collapsed rendering no longer needs
 a separate message-pruning policy that anticipates the grouping rules.
 
-Tool output and nested delegation projections are reconstructed while processing
-the loaded events, including for collapsed summaries. The shared row plan avoids
-rendering unrelated summaries' child rows when selecting an expansion, but it
-does not defer event processing or output reconstruction.
+For collapsed inactive timelines, the context query retains command lifecycle
+metadata but omits command-output bodies. The same projection and grouping code
+selects visible rows. If commands remain visible outside summaries, their payloads
+are fetched by event ID and the complete rows are constructed before byte
+pagination. Active timelines, flat display, nested-row requests, and unlimited
+output requests read complete command payloads directly. Shell-command activity
+intents are parsed when a command row is rendered, not for hidden summary children.
+Other event payloads and nested delegation structure are still processed upfront.
 
-Selection still reads and decodes event payloads for the required context. Cold
-request cost remains dependent on that context; a large collapsed turn is not a
-constant-time lookup. Route-cache hits and unchanged deltas are separate cases
-and must be benchmarked separately from cold opens and appended updates.
+Pages and summary expansion use the same conversation-context loader. Expansion
+matches the requested turn and exact summary bounds, including nested summaries.
+The existing row-output expansion use of the endpoint selects rows owned by its
+requested range when the range does not identify a summary; this also handles a
+command finishing between preview and expansion.
+
+Cold request cost still depends on the required context; a large collapsed turn
+is not a constant-time lookup. Route-cache hits and unchanged deltas are separate
+cases and must be benchmarked separately from cold opens and appended updates.
 
 `GET /api/v1/threads/:id/timeline/turn-summary-details` and
 `sdk.threads.timelineTurnSummaryDetails` retain the existing `turnId`,

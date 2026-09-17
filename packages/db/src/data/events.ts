@@ -1160,10 +1160,19 @@ function storedEventRowFieldsWithInlineOutputLimit(
       };
 }
 
-function storedEventRowSqlFields(maxInlineOutputChars: InlineOutputCharLimit) {
+function storedEventRowSqlFields(
+  maxInlineOutputChars: InlineOutputCharLimit,
+  includeCommandOutput = true,
+) {
+  const data = storedEventRowFieldsWithInlineOutputLimit(maxInlineOutputChars).data;
   return {
     createdAt: sql<number>`${events.createdAt}`,
-    data: sql<string>`${storedEventRowFieldsWithInlineOutputLimit(maxInlineOutputChars).data}`,
+    data: includeCommandOutput ? sql<string>`${data}` : sql<string>`CASE
+      WHEN ${events.itemKind} = 'commandExecution' AND ${events.type} IN ('item/started', 'item/completed')
+        THEN json_remove(${events.data}, '$.item.aggregatedOutput')
+      WHEN ${events.type} = 'item/commandExecution/outputDelta'
+        THEN json_set(${events.data}, '$.delta', '')
+      ELSE ${data} END`,
     id: sql<string>`${events.id}`,
     itemId: sql<string | null>`${events.itemId}`,
     itemKind: sql<StoredEventRow["itemKind"]>`${events.itemKind}`,
@@ -1193,6 +1202,7 @@ export interface FindStoredEventRowArgs {
 }
 
 export interface ListStoredEventRowsByParentToolCallIdsArgs {
+  includeCommandOutput?: boolean;
   excludeDiagnosticEvents?: boolean;
   beforeSequence?: number;
   excludedTypes?: readonly ThreadEventType[];
@@ -1706,7 +1716,7 @@ export function listStoredEventRowsByParentToolCallIds(
   }
 
   return db
-    .select(storedEventRowSqlFields(args.maxInlineOutputChars))
+    .select(storedEventRowSqlFields(args.maxInlineOutputChars, args.includeCommandOutput))
     .from(
       sql`${events} INDEXED BY events_parent_tool_call_thread_parent_sequence_idx`,
     )
@@ -3166,9 +3176,33 @@ export function findStoredTimelineWindowByteBudgetFloor(
   return { eventDataBytes: includedDataBytes, kind: "fits" };
 }
 
+export function hasTimelineTurnEventsInWindow(
+  db: DbConnection,
+  args: Omit<ListStoredTimelineWindowEventRowsArgs, "maxInlineOutputChars"> & {
+    turnId: string;
+  },
+): boolean {
+  return (
+    db
+      .select({ sequence: events.sequence })
+      .from(events)
+      .where(
+        and(
+          ...storedTimelineWindowConditions({ ...args, maxInlineOutputChars: null }),
+          eq(events.turnId, args.turnId),
+        ),
+      )
+      .limit(1)
+      .get() !== undefined
+  );
+}
+
 export function listStoredTimelineTurnEventRows(
   db: DbConnection,
-  args: ListStoredTimelineWindowEventRowsArgs & { turnIds: readonly string[] },
+  args: ListStoredTimelineWindowEventRowsArgs & {
+    turnIds: readonly string[];
+    includeCommandOutput?: boolean;
+  },
 ): StoredEventRow[] {
   if (args.turnIds.length === 0) return [];
   return queryInSqliteVariableBatches({
@@ -3178,7 +3212,9 @@ export function listStoredTimelineTurnEventRows(
     fixedVariableCount: 32,
     queryBatch: (turnIds) =>
       db
-        .select(storedEventRowSqlFields(args.maxInlineOutputChars))
+        .select(
+          storedEventRowSqlFields(args.maxInlineOutputChars, args.includeCommandOutput),
+        )
         .from(
           sql`${events} INDEXED BY events_thread_turn_type_item_sequence_idx`,
         )
@@ -3190,6 +3226,24 @@ export function listStoredTimelineTurnEventRows(
         )
         .all(),
   }).sort((left, right) => left.sequence - right.sequence);
+}
+
+export function listStoredEventRowsByIds(
+  db: DbConnection,
+  args: { ids: readonly string[]; maxInlineOutputChars: InlineOutputCharLimit },
+): StoredEventRow[] {
+  return queryInSqliteVariableBatches({
+    values: args.ids,
+    variableCountPerValue: 1,
+    dedupeKey: (id) => id,
+    fixedVariableCount: 32,
+    queryBatch: (ids) =>
+      db
+        .select(storedEventRowFieldsWithInlineOutputLimit(args.maxInlineOutputChars))
+        .from(events)
+        .where(inArray(events.id, [...ids]))
+        .all(),
+  });
 }
 
 export function listTimelineRootWindowTurnIds(
@@ -3217,11 +3271,11 @@ export function listTimelineRootWindowTurnIds(
 
 export function listStoredTimelineThreadWindowEventRows(
   db: DbConnection,
-  args: ListStoredTimelineWindowEventRowsArgs,
+  args: ListStoredTimelineWindowEventRowsArgs & { includeCommandOutput?: boolean },
 ): StoredEventRow[] {
   return db
     .select(
-      storedEventRowFieldsWithInlineOutputLimit(args.maxInlineOutputChars),
+      storedEventRowSqlFields(args.maxInlineOutputChars, args.includeCommandOutput),
     )
     .from(events)
     .where(and(...storedTimelineWindowConditions(args), isNull(events.turnId)))
