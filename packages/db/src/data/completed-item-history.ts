@@ -1,4 +1,4 @@
-import { inArray } from "drizzle-orm";
+import { and, inArray, isNotNull, sql } from "drizzle-orm";
 import type { DbQueryConnection } from "../connection.js";
 import { events } from "../schema.js";
 import {
@@ -22,11 +22,19 @@ export function expandSelectedCompletedItemRows(
     string,
     ReturnType<typeof decodeCompletedItemHistory>
   >();
-  for (let offset = 0; offset < ids.length; offset += 250) {
+  if (ids.length > 0) {
     const selected = db
       .select({ id: events.id, history: events.completedItemHistory })
       .from(events)
-      .where(inArray(events.id, ids.slice(offset, offset + 250)))
+      .where(
+        and(
+          inArray(
+            events.id,
+            sql`(select value from json_each(${JSON.stringify(ids)}))`,
+          ),
+          isNotNull(events.completedItemHistory),
+        ),
+      )
       .all();
     for (const row of selected) {
       if (row.history !== null)
@@ -46,7 +54,12 @@ export function expandSelectedCompletedItemRows(
         sequence: history.sequence,
         createdAt: history.createdAt,
       });
-    const payload = parseHistoryPayload(row.data);
+    const payload = history.records.some(
+      (record) =>
+        record.sharedFields.length > 0 || record.sharedItemFields.length > 0,
+    )
+      ? parseHistoryPayload(row.data)
+      : {};
     for (const record of history.records) {
       if (record.sequence <= throughSequence)
         expanded.push({

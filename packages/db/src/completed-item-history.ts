@@ -62,7 +62,10 @@ function fieldNames(value: JsonValue | undefined): string[] {
 }
 
 export function decodeHistory(data: string): HistoryRecord[] {
-  const value = jsonValueSchema.parse(JSON.parse(data));
+  return decodeHistoryValue(jsonValueSchema.parse(JSON.parse(data)));
+}
+
+function decodeHistoryValue(value: JsonValue): HistoryRecord[] {
   if (
     !Array.isArray(value) ||
     value.length !== 2 ||
@@ -215,7 +218,7 @@ export function decodeCompletedItemHistory(data: string) {
     !Number.isFinite(value[2])
   )
     throw new Error("Invalid combined completed item history");
-  const records = decodeHistory(JSON.stringify(value[3]));
+  const records = decodeHistoryValue(value[3]);
   const sequence = value[1];
   if (records.some((row) => row.sequence >= sequence))
     throw new Error("Completed item history exceeds completion sequence");

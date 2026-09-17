@@ -110,3 +110,34 @@ Initial evidence remains under implementing thread `thr_mwh5k9hti7` in
 under parent thread `thr_vmdgc3ke5y` in `pr2-review/final`. Copies are private and
 mode 0600, with Connect plugin records verified absent. No live database or copied
 Connect configuration was used; nothing was merged or deployed.
+
+## Reader optimization follow-up (2026-09-17)
+
+Compared with rebased PR2 `e2091fbea2` (base `0188d91972`), the reader now
+fetches selected completion metadata in one parameterized query instead of
+250-ID batches. SQLite uses the existing events primary-key index; `json_each`
+expands only the supplied ID array. Nested history no longer goes through an
+extra JSON serialization, parse and validation, and reconstruction skips parsing
+completion payloads when it needs none of their fields. Storage, compaction
+rules, cache state and indexes are unchanged.
+
+Ten large selections, alternating original and optimized reconstruction ten times
+per case, matched exactly. Median relative reconstruction improvement was 22.6%.
+One 10,000-row selection improved from 170.1 to 135.5 ms, with 35 metadata queries
+reduced to one. The query plan uses `sqlite_autoindex_events_1`, not an events scan.
+
+Thirty matching page requests were also measured with six alternating calls per
+implementation, after warming both. All response fields and pagination matched.
+The median paired elapsed reduction was 7.3 ms; process CPU time fell by a median
+paired 8.3 ms, with lower CPU usage in 26 of 30 cases. The host was busy, so elapsed
+timings are approximate and are not expected production latency. This compares
+optimized PR2 with the original rebased PR2; it does not establish that PR2 is as
+fast as main. Component reconstruction savings are not whole-page percentages.
+
+The follow-up passes 602 DB tests, 74 server tests, and DB/server typechecks.
+All 2,326 complete timelines and context values match the uncompacted baseline,
+with zero differences or errors. This reader change does not establish a new
+maximum live or background event-loop stall time.
+
+Artifacts and harnesses:
+`/Users/michael/.bb/thread-storage/thr_vmdgc3ke5y/pr2-reader-optimization/`.

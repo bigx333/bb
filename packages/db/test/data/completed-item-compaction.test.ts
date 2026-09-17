@@ -87,6 +87,23 @@ function normalized(rows: ReturnType<ReturnType<typeof setup>["rows"]>) {
 }
 
 describe("completed items at first lifecycle position", () => {
+  it("expands selected history alongside more than a thousand ordinary completions", () => {
+    const f = setup();
+    try {
+      for (let sequence = 10; sequence < 1011; sequence++) {
+        f.seed(sequence, { type: "item/completed" });
+      }
+      const before = f.rows();
+      for (let index = 0; index < 20; index++) f.advance();
+      expect(f.rows().length).toBe(before.length - 2);
+      expect(
+        normalized(expandSelectedCompletedItemRows(f.db, f.rows())),
+      ).toEqual(normalized(before));
+    } finally {
+      f.db.$client.close();
+    }
+  });
+
   it("preserves completion ownership, timestamps, lossless history and highwater through atomic progress", () => {
     const f = setup();
     try {
