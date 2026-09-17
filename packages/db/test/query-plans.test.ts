@@ -29,6 +29,8 @@ import {
   listStoredConversationOutlineEventRows,
   listStoredEventRows,
   listStoredEventRowsByIds,
+  listTimelineWindowItemIds,
+  listStoredTimelineTurnEventRows,
   listStoredEventRowsByParentToolCallIds,
   listStoredTurnCompletedKeys,
   listTodoSnapshotEventRowsForThread,
@@ -455,6 +457,42 @@ describe("slow query index plans", () => {
       db.$client.close();
     },
   );
+
+  it("bounds expansion item discovery by sequence and context lookup by turn", () => {
+    const { db, thread } = setup();
+    try {
+      const queries = captureStatements(db, () => {
+        listTimelineWindowItemIds(db, {
+          threadId: thread.id,
+          sequenceStart: 100,
+          beforeSequence: 200,
+          maxInlineOutputChars: null,
+        });
+        listStoredTimelineTurnEventRows(db, {
+          threadId: thread.id,
+          turnIds: ["selected-turn"],
+          sequenceStart: 0,
+          beforeSequence: 1000,
+          maxInlineOutputChars: null,
+          itemContext: {
+            itemIds: ["selected-item"],
+            sequenceStart: 100,
+            beforeSequence: 200,
+          },
+        });
+      });
+      expect(queries).toHaveLength(2);
+      const plans = queries.map((query) => queryPlanDetails({ db, ...query }));
+      expect(plans[0]).toMatch(
+        /events_thread_sequence_idx \(thread_id=\? AND sequence>\? AND sequence<\?\)/u,
+      );
+      expect(plans[1]).toMatch(
+        /events_thread_turn_type_item_sequence_idx \(thread_id=\? AND turn_id=\?\)/u,
+      );
+    } finally {
+      db.$client.close();
+    }
+  });
 
   it("looks up completed turns by thread and turn key", () => {
     const { db, thread } = setup();

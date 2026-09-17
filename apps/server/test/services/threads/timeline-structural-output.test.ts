@@ -5,6 +5,8 @@ import {
   createProject,
   createThread,
   insertEvents,
+  listStoredTimelineTurnEventRows,
+  listTimelineWindowItemIds,
   migrate,
   noopNotifier,
   upsertHost,
@@ -15,7 +17,7 @@ import {
   buildTimelineTurnSummaryDetails,
 } from "../../../src/services/threads/timeline.js";
 
-function fixture() {
+function fixture(splitTurn = false) {
   const db = createConnection(":memory:");
   migrate(db);
   const host = upsertHost(db, noopNotifier, { name: "test-host" });
@@ -33,13 +35,18 @@ function fixture() {
     type: Parameters<typeof insertEvents>[2][number]["type"],
     data: object,
     itemId: string | null = null,
-    itemKind: "commandExecution" | "agentMessage" | null = null,
+    itemKind:
+      | "commandExecution"
+      | "agentMessage"
+      | "contextCompaction"
+      | null = null,
+    turnId = "turn",
   ) => {
     insertEvents(db, noopNotifier, [
       {
         threadId: thread.id,
         providerThreadId: "provider",
-        scope: turnScope("turn"),
+        scope: turnScope(turnId),
         sequence: ++sequence,
         type,
         data: JSON.stringify(data),
@@ -60,6 +67,19 @@ function fixture() {
       aggregatedOutput: output,
     },
   });
+  if (splitTurn) {
+    add("turn/started", {}, null, null, "overlap");
+    for (let index = 0; index < 100; index++) {
+      const id = `overlap-${index}`;
+      add(
+        "item/completed",
+        command(id, "unrelated output"),
+        id,
+        "commandExecution",
+        "overlap",
+      );
+    }
+  }
   add("turn/started", {});
   for (let index = 0; index < 100; index++) {
     const id = `command-${index}`;
@@ -76,6 +96,57 @@ function fixture() {
     "answer",
     "agentMessage",
   );
+  if (splitTurn) {
+    add(
+      "item/completed",
+      { item: { type: "agentMessage", id: "next", text: "Next task" } },
+      "next",
+      "agentMessage",
+    );
+    add(
+      "item/commandExecution/outputDelta",
+      { itemId: "command-0", delta: "late output" },
+      "command-0",
+    );
+    add(
+      "item/completed",
+      { item: { type: "contextCompaction", id: "compact-1" } },
+      "compact-1",
+      "contextCompaction",
+    );
+    add(
+      "item/completed",
+      command("selected", "selected output"),
+      "selected",
+      "commandExecution",
+    );
+    add(
+      "item/completed",
+      command("overlap-0", "late completion"),
+      "overlap-0",
+      "commandExecution",
+      "overlap",
+    );
+    add(
+      "item/completed",
+      command("selected-tail", "tail output"),
+      "selected-tail",
+      "commandExecution",
+    );
+    add(
+      "item/completed",
+      { item: { type: "agentMessage", id: "final", text: "Finished" } },
+      "final",
+      "agentMessage",
+    );
+    add(
+      "item/completed",
+      { item: { type: "contextCompaction", id: "compact-2" } },
+      "compact-2",
+      "contextCompaction",
+    );
+    add("turn/completed", { status: "completed" }, null, null, "overlap");
+  }
   add(
     "item/completed",
     command("trailing", "visible output\n".repeat(100)),
@@ -105,6 +176,70 @@ function build(
 }
 
 describe("timeline command output selection", () => {
+  it("expands a small group without selecting unrelated command history", () => {
+    const { db, thread } = fixture(true);
+    try {
+      const expanded = build(db, thread, true).response;
+      const summary = expanded.rows.find(
+        (row) =>
+          row.kind === "turn" &&
+          row.children?.some(
+            (child) =>
+              child.kind === "work" &&
+              child.workKind === "command" &&
+              child.callId === "selected",
+          ),
+      );
+      if (summary?.kind !== "turn" || summary.turnId === null)
+        throw new Error("Missing selected summary");
+      const details = buildTimelineTurnSummaryDetails(db, thread, {
+        turnId: summary.turnId,
+        sourceSeqStart: summary.sourceSeqStart,
+        sourceSeqEnd: summary.sourceSeqEnd,
+        completedTurnDisplay: "collapse",
+        includeDiagnosticOperations: false,
+      });
+      expect(details.rows).toEqual(summary.children);
+      const context = listStoredTimelineTurnEventRows(db, {
+        threadId: thread.id,
+        turnIds: [summary.turnId, "overlap"],
+        sequenceStart: 0,
+        beforeSequence: 1000,
+        maxInlineOutputChars: null,
+        itemContext: {
+          itemIds: listTimelineWindowItemIds(db, {
+            threadId: thread.id,
+            sequenceStart: summary.sourceSeqStart,
+            beforeSequence: summary.sourceSeqEnd + 1,
+            maxInlineOutputChars: null,
+          }),
+          sequenceStart: summary.sourceSeqStart,
+          beforeSequence: summary.sourceSeqEnd + 1,
+        },
+      });
+      expect(
+        context
+          .filter((row) => row.itemKind === "commandExecution")
+          .map((row) => row.itemId),
+      ).toEqual([
+        "overlap-0",
+        "command-0",
+        "selected",
+        "overlap-0",
+        "selected-tail",
+      ]);
+      expect(
+        context.filter((row) => row.itemKind === "contextCompaction"),
+      ).toHaveLength(2);
+      expect(context.some((row) => row.type === "turn/completed")).toBe(true);
+      expect(
+        context.filter((row) => row.itemKind === "agentMessage"),
+      ).toHaveLength(3);
+    } finally {
+      db.$client.close();
+    }
+  });
+
   it("omits hidden payloads while preserving visible output, summary bounds, and expansion", () => {
     const { db, thread } = fixture();
     try {

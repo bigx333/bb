@@ -58,6 +58,7 @@ import {
   listLatestOpenBackgroundTaskStateRowsForThread,
   hasTimelineTurnEventsInWindow,
   listStoredTimelineTurnEventRows,
+  listTimelineWindowItemIds,
   listStoredTimelineThreadWindowEventRows,
   listTimelineRootWindowTurnIds,
   listTodoSnapshotEventRowsForThread,
@@ -830,6 +831,14 @@ function loadTimelineContextRows(
       }),
   );
   let rows = listStoredTimelineThreadWindowEventRows(db, windowArgs);
+  const itemContext =
+    requestedTurnIds.length === 0
+      ? undefined
+      : {
+          itemIds: listTimelineWindowItemIds(db, windowArgs),
+          sequenceStart,
+          beforeSequence,
+        };
   const initialTurnIds = [
     ...requestedTurnIds,
     ...listTimelineRootWindowTurnIds(db, windowArgs),
@@ -864,6 +873,7 @@ function loadTimelineContextRows(
           sequenceStart: epochSequenceStart,
           beforeSequence: maxSeq + 1,
           turnIds,
+          itemContext,
         }),
       ]);
       selectedRows = ensureTimelineWindowParentedRows(db, {
@@ -1734,7 +1744,7 @@ function buildTimelineTurnSummaryDetailsPage(
     )
     .map((row) => toThreadEventWithMeta(row));
   const children = buildThreadTimelineTurnDetailsFromEvents({
-    events: projectionEvents,
+    events: compactThreadTimelineSummaryEvents(projectionEvents),
     options: {
       completedTurnDisplay: options.completedTurnDisplay,
       includeDiagnosticOperations,

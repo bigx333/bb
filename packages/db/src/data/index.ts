@@ -313,6 +313,7 @@ export {
   scopedItemRefKey,
   listStoredTimelineWindowEventRows,
   listStoredTimelineTurnEventRows,
+  listTimelineWindowItemIds,
   hasTimelineTurnEventsInWindow,
   listStoredTimelineThreadWindowEventRows,
   listTimelineRootWindowTurnIds,

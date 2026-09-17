@@ -130,7 +130,15 @@ intents are parsed when a command row is rendered, not for hidden summary childr
 Other event payloads and nested delegation structure are still processed upfront.
 
 Pages and summary expansion use the same conversation-context loader. Expansion
-matches the requested turn and exact summary bounds, including nested summaries.
+first selects item identities from metadata in the requested interval, then loads
+their event histories within the snapshot. This preserves updates to items that
+started outside the interval without loading unrelated command, reasoning, and
+file-change payloads from the same turn. Turn and request state, assistant messages,
+and compaction lifecycle events remain context: they affect grouping or represent
+state shared across the turn. Parent and child context is still resolved by the
+same loader. The requested interval limits detail selection, not those dependencies.
+Expansion matches the requested turn and exact summary bounds, including nested
+summaries.
 The existing row-output expansion use of the endpoint selects rows owned by its
 requested range when the range does not identify a summary; this also handles a
 command finishing between preview and expansion.

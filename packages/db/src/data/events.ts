@@ -3197,11 +3197,30 @@ export function hasTimelineTurnEventsInWindow(
   );
 }
 
+export function listTimelineWindowItemIds(
+  db: DbConnection,
+  args: ListStoredTimelineWindowEventRowsArgs,
+): string[] {
+  return db
+    .selectDistinct({ itemId: sql<string>`${events.itemId}` })
+    .from(events)
+    .where(
+      and(...storedTimelineWindowConditions(args), isNotNull(events.itemId)),
+    )
+    .all()
+    .map((row) => row.itemId);
+}
+
 export function listStoredTimelineTurnEventRows(
   db: DbConnection,
   args: ListStoredTimelineWindowEventRowsArgs & {
     turnIds: readonly string[];
     includeCommandOutput?: boolean;
+    itemContext?: {
+      itemIds: readonly string[];
+      sequenceStart: number;
+      beforeSequence: number;
+    };
   },
 ): StoredEventRow[] {
   if (args.turnIds.length === 0) return [];
@@ -3222,6 +3241,21 @@ export function listStoredTimelineTurnEventRows(
           and(
             ...storedTimelineWindowConditions(args),
             inArray(events.turnId, [...turnIds]),
+            args.itemContext === undefined
+              ? undefined
+              : or(
+                  and(
+                    gte(events.sequence, args.itemContext.sequenceStart),
+                    lt(events.sequence, args.itemContext.beforeSequence),
+                  ),
+                  sql`${events.type} NOT LIKE 'item/%'`,
+                  inArray(events.itemKind, [
+                    "agentMessage",
+                    "contextCompaction",
+                  ]),
+                  eq(events.type, "item/agentMessage/delta"),
+                  sql`${events.itemId} IN (SELECT value FROM json_each(${JSON.stringify(args.itemContext.itemIds)}))`,
+                ),
           ),
         )
         .all(),
