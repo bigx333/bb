@@ -513,9 +513,11 @@ describe("EmbeddedThreadChat", () => {
       }),
     );
     expect(mocks.sendThreadMessageMutateAsync).not.toHaveBeenCalled();
-    expect(
-      screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
-    ).toBe("");
+    await vi.waitFor(() => {
+      expect(
+        screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
+      ).toBe("");
+    });
   });
 
   it("preserves a pending queued draft through unmount and network failure", async () => {
