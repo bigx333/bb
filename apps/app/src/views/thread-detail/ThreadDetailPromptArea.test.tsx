@@ -957,6 +957,40 @@ describe("environment follow-up summary", () => {
 });
 
 describe("ThreadDetailPromptArea", () => {
+  it.each(["accepted", "failed"])(
+    "retains a queued draft until the request is %s",
+    async (outcome) => {
+      const submission = createDeferredPromise<ThreadQueuedMessage>();
+      mocks.createQueuedMessageMutateAsync.mockReturnValueOnce(
+        submission.promise,
+      );
+      mocks.promptDraft.text = "Keep this message safe";
+      const submittedDraft = mocks.promptDraft.getCurrent();
+      renderPromptArea({ thread: makeThread({ status: "active" }) });
+
+      fireEvent.click(screen.getByRole("button", { name: "Submit composer" }));
+
+      expect(mocks.createQueuedMessageMutateAsync).toHaveBeenCalledTimes(1);
+      expect(mocks.promptDraft.clearIfCurrentMatches).not.toHaveBeenCalled();
+
+      await act(async () => {
+        if (outcome === "accepted") {
+          submission.resolve(makeQueuedMessage());
+        } else {
+          submission.reject(new TypeError("Failed to fetch"));
+        }
+      });
+
+      if (outcome === "accepted") {
+        expect(mocks.promptDraft.clearIfCurrentMatches).toHaveBeenCalledWith(
+          submittedDraft,
+        );
+      } else {
+        expect(mocks.promptDraft.clearIfCurrentMatches).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it("preserves plugin submission data through a follow-up composer", async () => {
     mocks.defaultExecutionOptions = {
       model: "gpt-5",

@@ -1058,7 +1058,9 @@ export function ThreadDetailPromptArea({
       return;
     }
 
-    promptDraft.clearIfCurrentMatches(submittedDraft);
+    if (!isQueuingMessage) {
+      promptDraft.clearIfCurrentMatches(submittedDraft);
+    }
     setBottomAttachmentError(null);
 
     try {
@@ -1070,6 +1072,7 @@ export function ThreadDetailPromptArea({
         });
         if (request) {
           await createQueuedMessage.mutateAsync(request);
+          promptDraft.clearIfCurrentMatches(submittedDraft);
         }
       } else {
         const request = buildAutoFollowUpRequest({

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { createDeferredPromise } from "@bb/test-helpers";
 import { useEffect, useLayoutEffect, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FollowUpComposerProps } from "@/components/promptbox/FollowUpPromptBox";
@@ -515,6 +516,29 @@ describe("EmbeddedThreadChat", () => {
     expect(
       screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
     ).toBe("");
+  });
+
+  it("preserves a pending queued draft through unmount and network failure", async () => {
+    const submission = createDeferredPromise<void>();
+    mocks.createQueuedMessageMutateAsync.mockReturnValueOnce(submission.promise);
+    mocks.threadRuntimeDisplayStatus = "active";
+    const view = renderEmbeddedChat();
+    fireEvent.change(screen.getByTestId("embedded-chat-composer"), {
+      target: { value: "Do not lose this message" },
+    });
+    fireEvent.click(screen.getByText("Send"));
+
+    expect(
+      screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
+    ).toBe("Do not lose this message");
+    view.unmount();
+    await act(async () => {
+      submission.reject(new TypeError("Failed to fetch"));
+    });
+    renderEmbeddedChat();
+    expect(
+      screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
+    ).toBe("Do not lose this message");
   });
 
   it("sends directly when the thread runtime is idle", async () => {

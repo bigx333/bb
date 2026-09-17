@@ -494,10 +494,18 @@ function EmbeddedThreadChatWithComposer({
     if (submittedInput.length === 0 || isTurnSubmitting) {
       return;
     }
-    promptDraft.clearIfCurrentMatches(submittedDraft);
+    const isQueuingMessage = shouldQueueFollowUpMessage(displayStatus);
+    if (!isQueuingMessage) {
+      promptDraft.clearIfCurrentMatches(submittedDraft);
+    }
     setBottomAttachmentError(null);
     setIsTurnSubmitting(true);
     void defaultSendOrQueueInput(submittedInput)
+      .then(() => {
+        if (isQueuingMessage) {
+          promptDraft.clearIfCurrentMatches(submittedDraft);
+        }
+      })
       .catch((error) => {
         if (!isMountedRef.current) {
           return;
