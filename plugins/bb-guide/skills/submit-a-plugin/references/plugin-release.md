@@ -12,9 +12,11 @@ Read this file before you validate or release the submitted plugin.
 6. Inspect the Git remote, visibility, worktree state, and release state.
 7. For a multi-plugin repository, inspect .bb/plugins.json and find the plugin
    subdirectory.
-8. Run focused tests, type checks, and builds with the repository package
-   manager.
-9. Run bb plugin build from the plugin directory.
+8. Run focused tests, typechecks, and builds in the environment allowed by the
+   user's and repository's validation policy. Reuse passing results for the
+   exact unchanged release commit.
+9. Verify the plugin build and install artifacts in that same environment.
+   Under remote-only CI policy, do not run package or build checks locally.
 
 The ID algorithm removes the npm scope and a lowercase bb-plugin- prefix. It
 converts the remaining value to lowercase, replaces other characters with
@@ -108,16 +110,20 @@ An exact ref prevents automatic selection of later compatible releases.
 An npm source must refer to a published package. The package must contain the
 prebuilt BB files. A Git install can build source during installation.
 
-1. Run bb plugin build.
-2. Run tests and type checks.
-3. Run npm pack --dry-run --ignore-scripts.
+Run these validation steps in the permitted environment, including remote CI
+when required. Do not treat the command examples as permission to run locally.
+
+1. Verify the plugin build.
+2. Verify tests and typechecks.
+3. Run npm pack --dry-run --ignore-scripts in the permitted environment.
 4. Confirm that the package contains its manifest and required dist files.
 5. Confirm the account with npm whoami.
 6. After approval, run npm publish --ignore-scripts.
 7. Add --access public for a new public scoped package.
 8. Confirm publication with npm view PACKAGE@VERSION name version.
 
-Do not republish an existing version. Increase the version and rebuild.
+Do not republish an existing version. Increase the version and rebuild in the
+permitted validation environment.
 
 Use this source shape:
 

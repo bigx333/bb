@@ -45,15 +45,26 @@ these remaining steps:
 
 ## Validate the marketplace
 
-Install only marketplace dependencies. Do not run submitted plugin code during
-this stage.
+Read the current marketplace workflow and validation requirements. Run its
+build, tests, source checks, and compatibility gates in the environment allowed
+by the user's and repository's policy. Under remote-only CI policy, first
+inspect the prepared files read-only, then push the approved branch and open
+the PR so its checks can run. Do not run local substitutes.
+
+The commands below illustrate marketplace checks, not a required local
+sequence. Install only marketplace dependencies; do not execute submitted
+plugin code during this stage. Follow the current workflow if commands change.
 
 ```sh
 npm ci --ignore-scripts
 npm run build
 npm run check
+```
+
+Read-only Git inspection can happen before submission:
+
+```sh
 git status --short
-git diff --check
 git diff -- entries/PLUGIN_ID.json icons/ screenshots/PLUGIN_ID/ overview/PLUGIN_ID.md
 ```
 
@@ -78,7 +89,12 @@ Confirm:
 - The screenshots directory holds no unreferenced file.
 - The overview file is at overview/PLUGIN_ID.md, is referenced from the entry,
   and passes the build.
-- Both marketplace checks pass.
+- Required marketplace checks pass for the exact PR head after submission.
+
+Until checks finish, mark validation as pending. Report failed, skipped, or
+blocked checks separately from successful ones. If the current contract
+requires a maintainer-controlled label such as `v1-change`, request that
+action when the submitting account lacks permission; do not bypass the gate.
 
 ## Open the pull request
 

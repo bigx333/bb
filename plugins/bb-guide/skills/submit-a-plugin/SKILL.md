@@ -23,6 +23,18 @@ commit, package, version, source, and commands. Get approval for that release.
 
 Do not expose credentials, private URLs, or local secrets.
 
+## Choose the validation environment
+
+Follow the user's and repository's validation policy for both the plugin and
+marketplace. Do not assume tests, typechecks, builds, or package checks may run
+locally. When policy requires remote CI, run them only there and reuse passing
+results for the exact unchanged candidate. Read-only inspection and permitted
+development-app screenshot capture are separate from automated checks.
+
+If an authorized validation environment is unavailable, report the missing
+checks. Do not substitute prohibited local checks or upload private code to a
+new service. A release still needs successful required checks before publication.
+
 ## Read current contracts
 
 The marketplace contract can change independently from BB releases. Read these
@@ -45,16 +57,18 @@ rules.
 ## Workflow
 
 1. Read repository instructions, package.json, Git state, and release state.
-2. Validate the plugin with its package manager and bb plugin build.
+2. Validate the plugin and its package in the permitted validation environment.
 3. Select and verify one public release source.
-4. Get separate approval before any release mutation.
-5. Create one marketplace entry with a vendored icon.
-6. Install the plugin and capture its screenshots.
-7. Copy the plugin PLUGIN_OVERVIEW.md file into the marketplace. The public
-   marketplace requires an overview file on every entry.
-8. Validate the marketplace repository.
-9. Commit only the entry, icon, screenshots, and overview file.
-10. Open a pull request from the submitter account.
+4. Prepare the entry, vendored icon, screenshots, and overview file. Copy
+   PLUGIN_OVERVIEW.md when available; otherwise get approval for a draft.
+5. Inspect the prepared files and get separate approval for the exact release
+   before any release mutation.
+6. Publish the approved release if needed and verify its public availability.
+7. Commit only the entry, icon, screenshots, and overview file. Push the
+   approved marketplace branch and open a PR from the submitter account.
+8. Verify the marketplace checks for that exact PR head. When validation runs
+   through PR CI, opening the PR precedes those checks; report them as pending
+   until they finish.
 
 Read these references as the task reaches each stage:
 
