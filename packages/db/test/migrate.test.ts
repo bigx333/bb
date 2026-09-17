@@ -868,9 +868,7 @@ function rewindMachineProvidersMigration(db: DbConnection): void {
     "requested_by_thread_id",
   ]) {
     if (!queuedDispatchOrigin.some((column) => column.name === name)) continue;
-    db.$client.exec(
-      `ALTER TABLE queued_thread_messages DROP COLUMN ${name}`,
-    );
+    db.$client.exec(`ALTER TABLE queued_thread_messages DROP COLUMN ${name}`);
   }
   if (
     db.$client
@@ -879,7 +877,6 @@ function rewindMachineProvidersMigration(db: DbConnection): void {
       .some((column) => column.name === "completed_item_history")
   ) {
     db.$client.exec("ALTER TABLE events DROP COLUMN completed_item_history");
-
   }
   db.$client.exec("DROP TABLE IF EXISTS thread_pruning_cursors");
   db.$client.exec("DROP TABLE IF EXISTS project_attachment_threads");
