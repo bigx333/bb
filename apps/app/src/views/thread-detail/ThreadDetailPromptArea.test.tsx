@@ -966,7 +966,15 @@ describe("ThreadDetailPromptArea", () => {
       );
       mocks.promptDraft.text = "Keep this message safe";
       const submittedDraft = mocks.promptDraft.getCurrent();
-      renderPromptArea({ thread: makeThread({ status: "active" }) });
+      renderPromptArea({
+        thread: makeThread({
+          status: "active",
+          runtime: {
+            displayStatus: "active",
+            hostReconnectGraceExpiresAt: null,
+          },
+        }),
+      });
 
       fireEvent.click(screen.getByRole("button", { name: "Submit composer" }));
 
