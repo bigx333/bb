@@ -60,7 +60,8 @@ rules.
 2. Validate the plugin and its package in the permitted validation environment.
 3. Select and verify one public release source.
 4. Prepare the entry, vendored icon, screenshots, and overview file. Copy
-   PLUGIN_OVERVIEW.md when available; otherwise get approval for a draft.
+   PLUGIN_OVERVIEW.md when available; otherwise get approval for a draft. The
+   public marketplace requires an overview file on every entry.
 5. Inspect the prepared files and get separate approval for the exact release
    before any release mutation.
 6. Publish the approved release if needed and verify its public availability.
