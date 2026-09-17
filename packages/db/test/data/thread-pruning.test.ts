@@ -119,15 +119,17 @@ describe("thread pruning", () => {
           f = { ...f, db: createConnection(saved) };
         }
       }
-      expect(policies.slice(0, 8)).toEqual([
+      expect(policies.slice(0, 10)).toEqual([
         "rate-limits",
         "usage",
         "turn-diffs",
         "resolved-items",
+        "completed-items",
         "rate-limits",
         "usage",
         "turn-diffs",
         "resolved-items",
+        "completed-items",
       ]);
       expect(sequences(f)).toEqual([1, 200, 201]);
       expect(

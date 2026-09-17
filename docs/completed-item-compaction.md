@@ -1,0 +1,62 @@
+# Completed item history compaction
+
+The existing event-maintenance rotation combines eligible settled item history
+into its `item/completed` row. The completion keeps its ID, payload, original
+creation timestamp and retained-output ownership. Its physical sequence becomes
+the first retained lifecycle sequence. One versioned internal column stores the
+original completion sequence and lossless start/delta information. No table,
+index, allocator, scheduler or daemon protocol change is involved.
+
+Eligibility requires a unique compatible completion, at most one start, a later
+retained completion of the turn, and no late lifecycle events or reopened turn.
+Supported kinds are command executions, file changes, assistant messages and
+reasoning. Unpruned repeated delta streams, file-change output deltas, malformed
+payloads, incompatible envelopes and oversized discovery/payload windows remain
+ordinary. A lifetime crossing a user request or completed context clear remains
+ordinary so message editing can keep its existing suffix-deletion behavior.
+
+Assistant and reasoning delta text is retained. A command delta can become an
+empty timing marker only when the command has completed, failed or been
+interrupted and has nonempty aggregated output. Without a retained start, the
+aggregated output must contain that delta. Otherwise the entire lifecycle stays
+ordinary. Starts never derive mutable output fields from a completion, so later
+output truncation or expiry cannot change reconstructed starts.
+
+Discovery uses the existing physical sequence/type/turn/item indexes. Each
+advance bounds candidate/support rows and input bytes; ambiguous or larger
+lifecycles are skipped, not partially rewritten. Source deletion, completion
+movement and cursor progress commit together. PR1's generation increment and
+`history-rewritten` notification invalidate cached views after the commit.
+Limits bound work rather than guaranteeing a maximum elapsed time.
+
+Timeline queries select physical rows first and only then decode their internal
+metadata for projection. Selected fork history recovers completion order before
+applying the existing completed-turn and event-type rules. Forks still create
+new IDs and sequence numbers. No arbitrary deleted-ID lookup or virtual raw-event
+pagination is provided.
+
+## SDK, CLI and exports
+
+`threads.events.list`, the raw events HTTP route and `bb thread log --json`
+(including `--all` JSON exports) return physical records. A combined row is still
+`item/completed`; it has its original completion ID/payload/timestamp and its new
+first lifecycle sequence. Internal metadata is not returned. Deleted start/delta
+IDs, original raw counts and old completion positions are not retained as a raw
+API contract. Consumers must not treat these exports as an exact provider wire
+transcript.
+
+Physical-row limits and sequence cursors count combined rows. Restart a traversal
+after a history rewrite rather than continuing an old cursor against changed
+history. Human CLI formats and the UI reconstruct original ordering, timing,
+text and edit cards. A fixed physical-row budget can include more history after
+compaction; exact page boundaries are not promised. Response byte limits remain
+independent of row limits, and stored timeline byte accounting includes metadata.
+
+## Verification
+
+The migrated SQLite regression tests cover eligibility, lossless reconstruction,
+command discard rules, output ownership, atomic rollback, late arrivals,
+highwater, boundary exclusions and one-row raw traversal. Server tests exercise
+the existing live wrapper, rewrite notifications and warmed timeline caches.
+Full-copy measurements and UI evidence accompany the draft PR; prototype
+measurements are not implementation guarantees.

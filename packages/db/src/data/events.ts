@@ -3103,7 +3103,7 @@ export function findStoredTimelineWindowByteBudgetFloor(
   const query = db
     .select({
       createdAt: events.createdAt,
-      dataBytes: sql<number>`length(CAST(${data} AS BLOB))`.as("data_bytes"),
+      dataBytes: sql<number>`length(CAST(${data} AS BLOB)) + COALESCE(length(CAST(${events.completedItemHistory} AS BLOB)), 0)`.as("data_bytes"),
       sequence: events.sequence,
       turnId: events.turnId,
     })

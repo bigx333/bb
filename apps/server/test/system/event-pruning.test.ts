@@ -171,6 +171,83 @@ function seedResolvedAssistantMessage(
 }
 
 describe("thread event pruning", () => {
+  it("refreshes a cached visible timeline after a live completed-item rewrite and exposes combined raw records", async () => {
+    await withTestHarness(async (harness) => {
+      const host = seedHost(harness.deps);
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+      });
+      const thread = seedThread(harness.deps, {
+        projectId: project.id,
+        environmentId: environment.id,
+      });
+      seedStoredEvent(harness.deps, {
+        threadId: thread.id,
+        sequence: 1,
+        scope: turnScope("turn-1"),
+        type: "turn/started",
+        itemId: null,
+        itemKind: null,
+        data: {},
+      });
+      seedResolvedAssistantMessage(harness, {
+        threadId: thread.id,
+        itemId: "message",
+        deltaSequences: [2],
+        completedSequence: 3,
+      });
+      seedStoredEvent(harness.deps, {
+        threadId: thread.id,
+        sequence: 4,
+        scope: turnScope("turn-1"),
+        type: "turn/completed",
+        itemId: null,
+        itemKind: null,
+        data: { status: "completed" },
+      });
+      harness.db.$client
+        .prepare("UPDATE events SET provider_thread_id = ? WHERE thread_id = ?")
+        .run("provider", thread.id);
+      const build = () =>
+        buildThreadTimelineWithProfile(harness.db, thread, {
+          completedTurnDisplay: "collapse",
+          includeDiagnosticOperations: false,
+          includeNestedRows: true,
+          maxInlineOutputChars: 8000,
+          eventBudget: 10000,
+          maxSeq: 4,
+          page: { kind: "latest", segmentLimit: 20 },
+        }).response;
+      const before = build();
+      expect(JSON.stringify(before)).toContain("Final answer");
+      expect(build()).toEqual(before);
+      const notify = vi.spyOn(harness.deps.hub, "notifyThread");
+      for (let i = 0; i < 5; i++)
+        pruneThreadEventHistoryBestEffort(harness.deps, {
+          threadId: thread.id,
+          mode: "idle",
+        });
+      expect(notify).toHaveBeenCalledWith(thread.id, ["history-rewritten"]);
+      expect(build()).toEqual(before);
+      const raw = await harness.app.request(
+        `/api/v1/threads/${thread.id}/events?limit=1&afterSeq=1`,
+      );
+      expect(raw.status).toBe(200);
+      const text = await raw.text();
+      expect(text).toContain("item/completed");
+      expect(text).not.toContain("completed_item_history");
+      expect(
+        listEvents(harness.db, { threadId: thread.id }).map(
+          (row) => row.sequence,
+        ),
+      ).toEqual([1, 2, 4]);
+    });
+  });
+
   it("prunes idle-thread noise rows and resolved item deltas", async () => {
     await withTestHarness(async (harness) => {
       const host = seedHost(harness.deps);

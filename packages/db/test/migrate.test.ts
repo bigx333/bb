@@ -872,6 +872,15 @@ function rewindMachineProvidersMigration(db: DbConnection): void {
       `ALTER TABLE queued_thread_messages DROP COLUMN ${name}`,
     );
   }
+  if (
+    db.$client
+      .prepare<[], TableInfoRow>("PRAGMA table_info(events)")
+      .all()
+      .some((column) => column.name === "completed_item_history")
+  ) {
+    db.$client.exec("ALTER TABLE events DROP COLUMN completed_item_history");
+
+  }
   db.$client.exec("DROP TABLE IF EXISTS thread_pruning_cursors");
   db.$client.exec("DROP TABLE IF EXISTS project_attachment_threads");
   db.$client.exec("DROP TABLE IF EXISTS project_attachments");
@@ -4567,6 +4576,7 @@ describe("migrate", () => {
         "data",
         "created_at",
         "parent_tool_call_id",
+        "completed_item_history",
       ]);
       const eventIndexNames = readIndexNames({
         db,
