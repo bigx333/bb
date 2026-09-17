@@ -1,4 +1,6 @@
-import { getThread, listEvents } from "@bb/db";
+import { getThread, listEvents, threads } from "@bb/db";
+import { eq } from "drizzle-orm";
+import { runThreadPruningSweep } from "../../src/services/system/thread-pruning-sweep.js";
 import { turnScope } from "@bb/domain";
 import { groupHostDaemonEvents } from "@bb/host-daemon-contract";
 import { describe, expect, it, vi } from "vitest";
@@ -171,7 +173,7 @@ function seedResolvedAssistantMessage(
 }
 
 describe("thread event pruning", () => {
-  it("refreshes a cached visible timeline after a live completed-item rewrite and exposes combined raw records", async () => {
+  it("refreshes a cached visible timeline after an idle background completed-item rewrite and exposes combined raw records", async () => {
     await withTestHarness(async (harness) => {
       const host = seedHost(harness.deps);
       const { project } = seedProjectWithSource(harness.deps, {
@@ -226,11 +228,21 @@ describe("thread event pruning", () => {
       expect(JSON.stringify(before)).toContain("Final answer");
       expect(build()).toEqual(before);
       const notify = vi.spyOn(harness.deps.hub, "notifyThread");
-      for (let i = 0; i < 5; i++)
-        pruneThreadEventHistoryBestEffort(harness.deps, {
+      for (let i = 0; i < 10; i++) {
+        const result = pruneThreadEventHistoryBestEffort(harness.deps, {
           threadId: thread.id,
-          mode: "idle",
+          mode: "active",
         });
+        expect(result?.policy).not.toBe("completed-items");
+      }
+      expect(listEvents(harness.db, { threadId: thread.id })).toHaveLength(4);
+      expect(notify).not.toHaveBeenCalled();
+      harness.db
+        .update(threads)
+        .set({ status: "idle" })
+        .where(eq(threads.id, thread.id))
+        .run();
+      for (let i = 0; i < 5; i++) await runThreadPruningSweep(harness.deps);
       expect(notify).toHaveBeenCalledWith(thread.id, ["history-rewritten"]);
       expect(build()).toEqual(before);
       const raw = await harness.app.request(

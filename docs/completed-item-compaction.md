@@ -1,6 +1,6 @@
 # Completed item history compaction
 
-The existing event-maintenance rotation combines eligible settled item history
+The existing idle background event-maintenance rotation combines eligible settled item history
 into its `item/completed` row. The completion keeps its ID, payload, original
 creation timestamp and retained-output ownership. Its physical sequence becomes
 the first retained lifecycle sequence. One versioned internal column stores the
@@ -14,6 +14,8 @@ reasoning. Unpruned repeated delta streams, file-change output deltas, malformed
 payloads, incompatible envelopes and oversized discovery/payload windows remain
 ordinary. A lifetime crossing a user request or completed context clear remains
 ordinary so message editing can keep its existing suffix-deletion behavior.
+Assistant lifetimes crossing another assistant completion or manager output also
+remain ordinary, preserving the output API and child completion notifications.
 
 Assistant and reasoning delta text is retained. A command delta can become an
 empty timing marker only when the command has completed, failed or been
@@ -27,7 +29,13 @@ advance bounds candidate/support rows and input bytes; ambiguous or larger
 lifecycles are skipped, not partially rewritten. Source deletion, completion
 movement and cursor progress commit together. PR1's generation increment and
 `history-rewritten` notification invalidate cached views after the commit.
-Limits bound work rather than guaranteeing a maximum elapsed time.
+Completed-item compaction is excluded from the synchronous per-thread cleanup
+rotation used by ingestion and turn-completion handlers. Existing PR1 live
+cleanup remains unchanged; the idle sweep performs compaction and refreshes
+open clients. This avoids adding compaction writes to the live path. SQLite
+checkpointing can still stall a background transaction (and unrelated live
+writes); limits bound work rather than guaranteeing a maximum elapsed time.
+No checkpoint setting is changed.
 
 Timeline queries select physical rows first and only then decode their internal
 metadata for projection. Selected fork history recovers completion order before

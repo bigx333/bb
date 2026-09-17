@@ -53,9 +53,10 @@ export function getNextThreadPruningPolicy(
     .all();
   const updated = new Map(rows.map((row) => [row.policy, row.updatedAt]));
   return (
-    THREAD_PRUNING_POLICIES.filter((policy) => !excluded.has(policy)).sort(
-      (a, b) => (updated.get(a) ?? 0) - (updated.get(b) ?? 0),
-    )[0] ?? null
+    THREAD_PRUNING_POLICIES.filter(
+      (policy) =>
+        !excluded.has(policy) && (scope === "" || policy !== "completed-items"),
+    ).sort((a, b) => (updated.get(a) ?? 0) - (updated.get(b) ?? 0))[0] ?? null
   );
 }
 

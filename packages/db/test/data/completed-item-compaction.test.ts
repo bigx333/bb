@@ -15,6 +15,7 @@ import { expandSelectedCompletedItemRows } from "../../src/data/completed-item-h
 import {
   listStoredEventRows,
   getHighWaterMarks,
+  getLatestThreadOutputEventRow,
   deleteThreadEventSuffixInTransaction,
 } from "../../src/data/events.js";
 import { getThreadEventRewriteGeneration } from "../../src/data/event-rewrite-generation.js";
@@ -188,6 +189,49 @@ describe("completed items at first lifecycle position", () => {
         const before = f.rows();
         expect(f.advance().removed).toBe(0);
         expect(f.rows()).toEqual(before);
+      } finally {
+        f.db.$client.close();
+      }
+    },
+  );
+
+  it.each(["assistant", "manager"])(
+    "preserves latest output when a completion crosses another %s output",
+    (kind) => {
+      const f = setup();
+      try {
+        f.seed(
+          4,
+          kind === "manager"
+            ? {
+                type: "system/manager/user_message",
+                scopeKind: "thread",
+                turnId: null,
+                data: JSON.stringify({ text: "earlier manager output" }),
+              }
+            : {
+                type: "item/completed",
+                itemId: "earlier-message",
+                itemKind: "agentMessage",
+                data: JSON.stringify({
+                  item: {
+                    id: "earlier-message",
+                    type: "agentMessage",
+                    text: "earlier assistant output",
+                  },
+                }),
+              },
+        );
+        const before = f.rows();
+        const output = getLatestThreadOutputEventRow(f.db, {
+          threadId: f.thread.id,
+        });
+        expect(output?.id).toBe("event-5");
+        expect(f.advance().removed).toBe(0);
+        expect(f.rows()).toEqual(before);
+        expect(
+          getLatestThreadOutputEventRow(f.db, { threadId: f.thread.id }),
+        ).toEqual(output);
       } finally {
         f.db.$client.close();
       }

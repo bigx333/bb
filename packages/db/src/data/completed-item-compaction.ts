@@ -190,21 +190,37 @@ export function advanceCompletedItemCompaction(
     const firstSequence = source[0]!.sequence;
     const boundaryRows: { id: string; dataBytes: number }[] = [];
     let boundaryBudgetExhausted = false;
-    for (const type of ["client/turn/requested", "system/operation"]) {
+    let crossesOutputBoundary = false;
+    const boundaryTypes = ["client/turn/requested", "system/operation"];
+    if (kind === "agentMessage")
+      boundaryTypes.push("item/completed", "system/manager/user_message");
+    for (const type of boundaryTypes) {
       const limit = Math.min(8, args.limit - scanned);
       if (limit <= 0) {
         boundaryBudgetExhausted = true;
         break;
       }
-      const found = db.all<{ id: string; dataBytes: number }>(sql`
-        SELECT id, octet_length(data) AS dataBytes
+      const found = db.all<{
+        id: string;
+        dataBytes: number;
+        itemKind: string | null;
+      }>(sql`
+        SELECT id, octet_length(data) AS dataBytes, item_kind AS itemKind
         FROM events INDEXED BY events_thread_type_sequence_idx
         WHERE thread_id = ${args.threadId} AND type = ${type}
-          AND sequence > ${firstSequence} AND sequence <= ${candidate.sequence}
+          AND sequence > ${firstSequence} AND sequence < ${candidate.sequence}
         ORDER BY sequence LIMIT ${limit}
       `);
       scanned += Math.max(1, found.length);
-      boundaryRows.push(...found);
+      if (type === "item/completed") {
+        crossesOutputBoundary ||= found.some(
+          (row) => row.itemKind === "agentMessage",
+        );
+      } else if (type === "system/manager/user_message") {
+        crossesOutputBoundary ||= found.length > 0;
+      } else {
+        boundaryRows.push(...found);
+      }
       if (found.length === limit) {
         boundaryBudgetExhausted = true;
         break;
@@ -212,6 +228,10 @@ export function advanceCompletedItemCompaction(
     }
     if (boundaryBudgetExhausted) {
       skip(kind, "boundary-budget");
+      continue;
+    }
+    if (crossesOutputBoundary) {
+      skip(kind, "output-order-boundary");
       continue;
     }
     const boundaryBytes = boundaryRows.reduce(
