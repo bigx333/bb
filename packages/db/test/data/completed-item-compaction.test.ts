@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { describe, expect, it, vi } from "vitest";
+import { eq, sql } from "drizzle-orm";
 import {
   events,
   retainedEventOutputs,
@@ -11,9 +11,14 @@ import { createProject } from "../../src/data/projects.js";
 import { createThread } from "../../src/data/threads.js";
 import { advanceThreadPruning } from "../../src/data/thread-pruning.js";
 import { advanceCompletedItemCompaction } from "../../src/data/completed-item-compaction.js";
-import { expandSelectedCompletedItemRows } from "../../src/data/completed-item-history.js";
+import {
+  expandSelectedCompletedItemRows,
+  expandSelectedCompletedItemRowsForProjection,
+} from "../../src/data/completed-item-history.js";
 import {
   listStoredEventRows,
+  listStoredTimelineTurnEventRows,
+  findTimelineWindowBudgetFloorSequence,
   getHighWaterMarks,
   getLatestThreadOutputEventRow,
   deleteThreadEventSuffixInTransaction,
@@ -99,6 +104,118 @@ describe("completed items at first lifecycle position", () => {
       expect(
         normalized(expandSelectedCompletedItemRows(f.db, f.rows())),
       ).toEqual(normalized(before));
+    } finally {
+      f.db.$client.close();
+    }
+  });
+
+  it("loads history with the selected timeline rows and keeps raw rows private", () => {
+    const f = setup();
+    try {
+      const before = f.rows();
+      f.advance();
+      const selected = listStoredTimelineTurnEventRows(f.db, {
+        threadId: f.thread.id,
+        turnIds: ["turn"],
+        sequenceStart: 0,
+        maxInlineOutputChars: 8000,
+      });
+      const prepare = vi.spyOn(f.db.$client, "prepare");
+      try {
+        const projected = expandSelectedCompletedItemRowsForProjection(
+          f.db,
+          selected,
+        );
+        const raw = expandSelectedCompletedItemRows(f.db, selected);
+        expect(prepare).not.toHaveBeenCalled();
+        expect(normalized(raw)).toEqual(normalized(before));
+        for (const row of projected) {
+          if (row.parsedData !== undefined)
+            expect(row.parsedData).toEqual(JSON.parse(row.data));
+        }
+        expect(projected.some((row) => row.parsedData !== undefined)).toBe(
+          true,
+        );
+      } finally {
+        prepare.mockRestore();
+      }
+    } finally {
+      f.db.$client.close();
+    }
+  });
+
+  it("charges the timeline budget for records inside a combined item", () => {
+    const f = setup();
+    try {
+      const args = {
+        threadId: f.thread.id,
+        sequenceStart: 0,
+        excludedTypes: [],
+        eventBudget: 4,
+      };
+      expect(findTimelineWindowBudgetFloorSequence(f.db, args)).toBe(1);
+      f.advance();
+      expect(findTimelineWindowBudgetFloorSequence(f.db, args)).toBe(1);
+      expect(
+        findTimelineWindowBudgetFloorSequence(f.db, {
+          ...args,
+          eventBudget: 0,
+        }),
+      ).toBe(6);
+      expect(
+        findTimelineWindowBudgetFloorSequence(f.db, {
+          ...args,
+          eventBudget: 5,
+        }),
+      ).toBeUndefined();
+    } finally {
+      f.db.$client.close();
+    }
+  });
+
+  it("reads changed owner payloads and metadata without reusing stale history", () => {
+    const f = setup();
+    try {
+      f.advance();
+      expandSelectedCompletedItemRows(f.db, f.rows());
+      f.db
+        .update(events)
+        .set({
+          data: JSON.stringify({
+            item: { id: "changed", type: "agentMessage", text: "new output" },
+          }),
+        })
+        .where(eq(events.id, "event-5"))
+        .run();
+      const changedOwner = expandSelectedCompletedItemRows(f.db, f.rows());
+      expect(
+        JSON.parse(changedOwner.find((row) => row.id === "event-2")!.data).item
+          .id,
+      ).toBe("changed");
+      f.db
+        .update(events)
+        .set({
+          completedItemHistory: sql`json_set(${events.completedItemHistory}, '$[3][1][0][5][0].item.text', 'changed start')`,
+        })
+        .where(eq(events.id, "event-5"))
+        .run();
+      const changedHistory = expandSelectedCompletedItemRows(f.db, f.rows());
+      expect(
+        JSON.parse(changedHistory.find((row) => row.id === "event-2")!.data)
+          .item.text,
+      ).toBe("changed start");
+      f.db
+        .update(events)
+        .set({ completedItemHistory: "broken" })
+        .where(eq(events.id, "event-5"))
+        .run();
+      expect(() => expandSelectedCompletedItemRows(f.db, f.rows())).toThrow();
+      f.db
+        .update(events)
+        .set({ completedItemHistory: null })
+        .where(eq(events.id, "event-5"))
+        .run();
+      expect(expandSelectedCompletedItemRows(f.db, f.rows())).toEqual(f.rows());
     } finally {
       f.db.$client.close();
     }

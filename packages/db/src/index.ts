@@ -27,4 +27,8 @@ export type { DbNotifier } from "./notifier.js";
 
 export * from "./data/index.js";
 
-export { expandSelectedCompletedItemRows } from "./data/completed-item-history.js";
+export {
+  expandSelectedCompletedItemRows,
+  expandSelectedCompletedItemRowsForProjection,
+  type ProjectionStoredEventRow,
+} from "./data/completed-item-history.js";

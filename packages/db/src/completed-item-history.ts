@@ -1,6 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
 import {
-  jsonValueSchema,
   threadEventTypeSchema,
   type JsonObject,
   type JsonValue,
@@ -45,8 +44,22 @@ function isObject(value: JsonValue | undefined): value is JsonObject {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function assertFiniteJsonNumbers(value: unknown): void {
+  if (typeof value === "number" && !Number.isFinite(value))
+    throw new Error("Non-finite completed item history number");
+  if (value !== null && typeof value === "object") {
+    for (const child of Object.values(value)) assertFiniteJsonNumbers(child);
+  }
+}
+
+function parseHistoryJson(data: string): JsonValue {
+  const value: unknown = JSON.parse(data);
+  assertFiniteJsonNumbers(value);
+  return value as JsonValue;
+}
+
 export function parseHistoryPayload(data: string): JsonObject {
-  const parsed = jsonValueSchema.parse(JSON.parse(data));
+  const parsed = parseHistoryJson(data);
   if (!isObject(parsed))
     throw new Error("Completed item history payload must be an object");
   return parsed;
@@ -62,7 +75,7 @@ function fieldNames(value: JsonValue | undefined): string[] {
 }
 
 export function decodeHistory(data: string): HistoryRecord[] {
-  return decodeHistoryValue(jsonValueSchema.parse(JSON.parse(data)));
+  return decodeHistoryValue(parseHistoryJson(data));
 }
 
 function decodeHistoryValue(value: JsonValue): HistoryRecord[] {
@@ -179,10 +192,10 @@ export function compactHistoryPayload(data: JsonObject, owner: JsonObject) {
   return { payload, sharedFields, sharedItemFields };
 }
 
-export function restoreHistoryPayload(
+export function restoreHistoryPayloadObject(
   record: HistoryRecord,
   owner: JsonObject,
-): string {
+): JsonObject {
   const payload = { ...record.payload };
   for (const key of record.sharedFields) {
     const value = owner[key];
@@ -202,11 +215,18 @@ export function restoreHistoryPayload(
     }
     payload.item = item;
   }
-  return JSON.stringify(payload);
+  return payload;
+}
+
+export function restoreHistoryPayload(
+  record: HistoryRecord,
+  owner: JsonObject,
+): string {
+  return JSON.stringify(restoreHistoryPayloadObject(record, owner));
 }
 
 export function decodeCompletedItemHistory(data: string) {
-  const value = jsonValueSchema.parse(JSON.parse(data));
+  const value = parseHistoryJson(data);
   if (
     !Array.isArray(value) ||
     value.length !== 4 ||

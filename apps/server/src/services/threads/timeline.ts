@@ -1,4 +1,4 @@
-import { expandSelectedCompletedItemRows } from "@bb/db";
+import { expandSelectedCompletedItemRowsForProjection } from "@bb/db";
 import { paginateTimelineContents } from "./timeline-content-pagination.js";
 import {
   getTimelineGroupingContext,
@@ -973,7 +973,8 @@ function selectStandardTimelineEventRows(
     knownBudgetFloor === null
       ? findTimelineWindowBudgetFloorSequence(db, {
           threadId: thread.id,
-          sequenceStart: epochSequenceStart,
+          sequenceStart:
+            hints[page.segmentLimit]?.sequence ?? epochSequenceStart,
           beforeSequence,
           eventBudget,
           excludedTypes: THREAD_TIMELINE_EXCLUDED_EVENT_TYPES,
@@ -1358,7 +1359,7 @@ function buildThreadTimelineInternal(
           rows: hydrateRetainedEventOutputRows(db, storedEventSelection.rows),
         }
       : storedEventSelection;
-  const rawEventRows = expandSelectedCompletedItemRows(
+  const rawEventRows = expandSelectedCompletedItemRowsForProjection(
     db,
     eventSelection.rows,
     snapshot.maxSeq,
@@ -1629,7 +1630,7 @@ export function buildThreadConversationOutline(
       sequenceStart: contextBoundarySeq ?? 0,
       threadId: thread.id,
     });
-    const decodedRawEvents = expandSelectedCompletedItemRows(
+    const decodedRawEvents = expandSelectedCompletedItemRowsForProjection(
       db,
       rawEventRows,
     ).map((row) => toThreadEventWithMeta(row));
@@ -1932,7 +1933,7 @@ function buildTimelineTurnSummaryDetailsPage(
         : sourceSeqStart,
     sourceRange.sourceSeqStart,
   );
-  const projectionEvents = expandSelectedCompletedItemRows(
+  const projectionEvents = expandSelectedCompletedItemRowsForProjection(
     db,
     projectionEventRows,
     snapshot.maxSeq,

@@ -37,8 +37,11 @@ checkpointing can still stall a background transaction (and unrelated live
 writes); limits bound work rather than guaranteeing a maximum elapsed time.
 No checkpoint setting is changed.
 
-Timeline queries select physical rows first and only then decode their internal
-metadata for projection. Selected fork history recovers completion order before
+Timeline queries select physical rows with their internal metadata, then reconstruct
+only the selected history for projection. The timeline event budget charges for
+the records inside each combined item, so removing physical rows does not cause
+a page to decode substantially more history. Reconstruction passes validated
+payload objects directly to projection instead of parsing them again. Selected fork history recovers completion order before
 applying the existing completed-turn and event-type rules. Forks still create
 new IDs and sequence numbers. No arbitrary deleted-ID lookup or virtual raw-event
 pagination is provided.
@@ -56,9 +59,10 @@ transcript.
 Physical-row limits and sequence cursors count combined rows. Restart a traversal
 after a history rewrite rather than continuing an old cursor against changed
 history. Human CLI formats and the UI reconstruct original ordering, timing,
-text and edit cards. A fixed physical-row budget can include more history after
-compaction; exact page boundaries are not promised. Response byte limits remain
-independent of row limits, and stored timeline byte accounting includes metadata.
+text and edit cards. Raw export limits count physical rows; the timeline work
+budget counts reconstructed records. Exact page boundaries are not promised.
+Response byte limits remain independent of row limits, and stored timeline byte
+accounting includes metadata.
 
 ## Verification
 
