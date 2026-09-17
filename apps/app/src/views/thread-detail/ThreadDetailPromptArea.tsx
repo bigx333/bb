@@ -464,7 +464,7 @@ export function ThreadDetailPromptArea({
       enabled: promptHistoryEnabled,
     },
   );
-  const createQueuedMessage = useCreateThreadQueuedMessage();
+  const createQueuedMessage = useCreateThreadQueuedMessage(thread.id);
   const stopThread = useStopThread();
   const cancelThreadPlan = useCancelThreadPlan();
   const clearThreadGoal = useClearThreadGoal();
@@ -1042,6 +1042,9 @@ export function ThreadDetailPromptArea({
   );
 
   const handleSend = useCallback(async () => {
+    if (createQueuedMessage.isPending) {
+      return;
+    }
     const submittedDraft = currentPromptDraft;
     const submittedInput = currentPromptDraftInput;
     if (isHandoffSelection) {

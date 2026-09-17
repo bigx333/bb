@@ -477,6 +477,63 @@ describe("thread runtime mutations", () => {
     );
   });
 
+  it.each(["accepted", "failed"])(
+    "shares a pending queue submission across remounts until it is %s",
+    async (outcome) => {
+      const { wrapper } = createQueryClientTestHarness();
+      const submission = createDeferredPromise<ThreadQueuedMessage>();
+      vi.mocked(sdk.threads.queuedMessages.create).mockReturnValueOnce(
+        submission.promise,
+      );
+      const first = renderHook(() => useCreateThreadQueuedMessage("thread-1"), {
+        wrapper,
+      });
+      const request = {
+        id: "thread-1",
+        input: [
+          { type: "text" as const, text: "Keep this draft", mentions: [] },
+        ],
+      };
+      act(() => {
+        void first.result.current.mutateAsync(request).catch(() => undefined);
+      });
+      await waitFor(() =>
+        expect(sdk.threads.queuedMessages.create).toHaveBeenCalledTimes(1),
+      );
+      first.unmount();
+
+      const reopened = renderHook(
+        () => useCreateThreadQueuedMessage("thread-1"),
+        {
+          wrapper,
+        },
+      );
+      const unrelated = renderHook(
+        () => useCreateThreadQueuedMessage("thread-2"),
+        {
+          wrapper,
+        },
+      );
+      expect(reopened.result.current.isPending).toBe(true);
+      expect(unrelated.result.current.isPending).toBe(false);
+
+      await act(async () => {
+        if (outcome === "accepted") {
+          submission.resolve(makeQueuedMessage());
+        } else {
+          submission.reject(new TypeError("Failed to fetch"));
+        }
+      });
+      await waitFor(() =>
+        expect(reopened.result.current.isPending).toBe(false),
+      );
+      await act(async () => {
+        await reopened.result.current.mutateAsync(request);
+      });
+      expect(sdk.threads.queuedMessages.create).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it("keeps an optimistically deleted queued message removed when the server says it is already gone", async () => {
     const { queryClient, wrapper } = createQueryClientTestHarness();
     queryClient.setQueryData(threadQueuedMessagesQueryKey("thread-1"), [

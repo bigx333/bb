@@ -50,6 +50,7 @@ import {
 import { makePluginRegistrationSet } from "@/test/fixtures/plugins";
 
 const mocks = vi.hoisted(() => ({
+  createQueuedMessageIsPending: false,
   cancelThreadPlanMutate: vi.fn(),
   clearThreadGoalMutate: vi.fn(),
   createQueuedMessageMutateAsync: vi.fn(),
@@ -662,7 +663,7 @@ vi.mock("@/hooks/mutations/thread-runtime-mutations", () => ({
     mutateAsync: mocks.createThreadMutateAsync,
   }),
   useCreateThreadQueuedMessage: () => ({
-    isPending: false,
+    isPending: mocks.createQueuedMessageIsPending,
     mutateAsync: mocks.createQueuedMessageMutateAsync,
   }),
   useDeleteThreadQueuedMessage: () => ({
@@ -896,6 +897,7 @@ function renderPromptArea(options: RenderPromptAreaOptions = {}) {
 }
 
 beforeEach(() => {
+  mocks.createQueuedMessageIsPending = false;
   testQueryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -957,6 +959,16 @@ describe("environment follow-up summary", () => {
 });
 
 describe("ThreadDetailPromptArea", () => {
+  it("does not resubmit a draft while another composer owns its pending request", () => {
+    mocks.createQueuedMessageIsPending = true;
+    mocks.promptDraft.text = "Already submitting";
+    renderPromptArea();
+    fireEvent.click(screen.getByRole("button", { name: "Submit composer" }));
+    expect(mocks.createQueuedMessageMutateAsync).not.toHaveBeenCalled();
+    expect(mocks.sendMessageMutateAsync).not.toHaveBeenCalled();
+    expect(mocks.promptDraft.clearIfCurrentMatches).not.toHaveBeenCalled();
+  });
+
   it.each(["accepted", "failed"])(
     "retains a queued draft until the request is %s",
     async (outcome) => {

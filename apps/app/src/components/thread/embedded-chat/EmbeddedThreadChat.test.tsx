@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { createDeferredPromise } from "@bb/test-helpers";
 import { useEffect, useLayoutEffect, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +16,7 @@ import { getPromptDraftAccessor } from "@/hooks/usePromptDraftStorage";
 import { EmbeddedThreadChat } from "./EmbeddedThreadChat";
 
 const mocks = vi.hoisted(() => ({
+  createQueuedMessageIsPending: false,
   createQueuedMessageMutateAsync: vi.fn(),
   markThreadReadMutate: vi.fn(),
   onOpenLink: vi.fn(),
@@ -300,7 +307,7 @@ vi.mock("@/hooks/mutations/thread-runtime-mutations", () => ({
   useCreateThreadQueuedMessage: () => ({
     mutateAsync: mocks.createQueuedMessageMutateAsync,
     mutate: vi.fn(),
-    isPending: false,
+    isPending: mocks.createQueuedMessageIsPending,
   }),
   useSendThreadMessage: () => ({
     mutateAsync: mocks.sendThreadMessageMutateAsync,
@@ -395,6 +402,7 @@ function renderEmbeddedChat(
 
 describe("EmbeddedThreadChat", () => {
   beforeEach(() => {
+    mocks.createQueuedMessageIsPending = false;
     window.localStorage.clear();
     mocks.createQueuedMessageMutateAsync.mockReset().mockResolvedValue({});
     mocks.sendThreadMessageMutateAsync.mockReset().mockResolvedValue({});
@@ -522,7 +530,9 @@ describe("EmbeddedThreadChat", () => {
 
   it("preserves a pending queued draft through unmount and network failure", async () => {
     const submission = createDeferredPromise<void>();
-    mocks.createQueuedMessageMutateAsync.mockReturnValueOnce(submission.promise);
+    mocks.createQueuedMessageMutateAsync.mockReturnValueOnce(
+      submission.promise,
+    );
     mocks.threadRuntimeDisplayStatus = "active";
     const view = renderEmbeddedChat();
     fireEvent.change(screen.getByTestId("embedded-chat-composer"), {
@@ -541,6 +551,21 @@ describe("EmbeddedThreadChat", () => {
     expect(
       screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
     ).toBe("Do not lose this message");
+  });
+
+  it("does not resubmit a draft while another composer owns its pending request", () => {
+    mocks.createQueuedMessageIsPending = true;
+    mocks.threadRuntimeDisplayStatus = "active";
+    renderEmbeddedChat();
+    fireEvent.change(screen.getByTestId("embedded-chat-composer"), {
+      target: { value: "Already submitting" },
+    });
+    fireEvent.click(screen.getByText("Send"));
+    expect(mocks.createQueuedMessageMutateAsync).not.toHaveBeenCalled();
+    expect(mocks.sendThreadMessageMutateAsync).not.toHaveBeenCalled();
+    expect(
+      screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
+    ).toBe("Already submitting");
   });
 
   it("sends directly when the thread runtime is idle", async () => {

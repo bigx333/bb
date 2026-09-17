@@ -238,7 +238,7 @@ function EmbeddedThreadChatWithComposer({
   const markThreadRead = useMarkThreadRead();
   const stopThread = useStopThread();
   const sendThreadMessage = useSendThreadMessage();
-  const createQueuedMessage = useCreateThreadQueuedMessage();
+  const createQueuedMessage = useCreateThreadQueuedMessage(threadId);
   const threadQuery = useThread(threadId);
   const pendingInteractionsQuery = useThreadPendingInteractions(threadId);
   const activePendingInteraction = getLatestPendingInteraction(
@@ -491,7 +491,11 @@ function EmbeddedThreadChatWithComposer({
   const handleSubmit = useCallback(() => {
     const submittedDraft = currentPromptDraft;
     const submittedInput = currentPromptDraftInput;
-    if (submittedInput.length === 0 || isTurnSubmitting) {
+    if (
+      submittedInput.length === 0 ||
+      isTurnSubmitting ||
+      createQueuedMessage.isPending
+    ) {
       return;
     }
     const isQueuingMessage = shouldQueueFollowUpMessage(displayStatus);
@@ -525,6 +529,7 @@ function EmbeddedThreadChatWithComposer({
         }
       });
   }, [
+    createQueuedMessage.isPending,
     currentPromptDraft,
     currentPromptDraftInput,
     defaultSendOrQueueInput,
@@ -806,7 +811,7 @@ function EmbeddedThreadChatWithComposer({
         entries: [],
         onSelectEntry: promptDraft.setDraft,
       } satisfies HistoryConfig,
-      isFollowUpSubmitting: isTurnSubmitting,
+      isFollowUpSubmitting: isTurnSubmitting || createQueuedMessage.isPending,
       message: currentPromptDraft.text,
       mentionRanges: currentPromptDraft.mentions,
       onChangeMessage: promptDraft.setTextAndMentions,
@@ -822,6 +827,7 @@ function EmbeddedThreadChatWithComposer({
     [
       canSubmitModifierShortcut,
       composerPlaceholder,
+      createQueuedMessage.isPending,
       currentPromptDraft,
       displayStatus,
       handleModifierSubmit,
