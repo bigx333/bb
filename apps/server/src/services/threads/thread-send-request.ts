@@ -1,3 +1,8 @@
+import {
+  withThreadSubmissionReceipt,
+  requireOrdinarySubmission,
+  type ThreadSubmissionReceipt,
+} from "./thread-submission-receipts.js";
 import { isStandaloneBuiltinClearCommand, type Thread } from "@bb/domain";
 import type {
   SendMessageRequest,
@@ -17,6 +22,24 @@ export async function acceptThreadSendRequest(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: AcceptThreadSendRequestArgs,
 ): Promise<SendMessageResponse> {
+  return withThreadSubmissionReceipt(
+    deps.db,
+    {
+      threadId: args.thread.id,
+      operation: "send",
+      payload: args.payload,
+    },
+    (submission) => acceptThreadSendRequestOnce(deps, args, submission),
+  );
+}
+
+async function acceptThreadSendRequestOnce(
+  deps: LoggedPendingInteractionWorkSessionDeps,
+  args: AcceptThreadSendRequestArgs,
+  submission: ThreadSubmissionReceipt | undefined,
+): Promise<SendMessageResponse> {
+  if (submission !== undefined)
+    requireOrdinarySubmission(args.payload.input, args.payload.mode);
   if (isStandaloneBuiltinClearCommand(args.payload.input)) {
     const environment = await requireThreadCommandEnvironment(deps, {
       thread: args.thread,
@@ -32,7 +55,11 @@ export async function acceptThreadSendRequest(
 
   const outcome = await attemptDispatch(deps, {
     thread: args.thread,
-    payload: args.payload,
+    payload:
+      submission === undefined
+        ? args.payload
+        : { ...args.payload, mode: "queue-if-active" },
+    submission,
     source: { kind: "inline" },
     queuePayload: { kind: "inline" },
     pluginSubmission: args.payload.pluginSubmission ?? null,

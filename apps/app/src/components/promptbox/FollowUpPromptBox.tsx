@@ -136,6 +136,7 @@ export interface FollowUpComposerProps {
   submitLabel?: string;
   submitIcon?: IconName;
   submitTitle?: string;
+  submitDisabled?: boolean;
   compactPromptPlaceholder: string;
   promptPlaceholder: string;
   canModifierSubmit: boolean;
@@ -730,12 +731,13 @@ function FollowUpPromptBoxWithComposer({
           isSubmitting: composer.isFollowUpSubmitting,
           disabled:
             !canSubmit ||
+            composer.submitDisabled === true ||
             composer.isFollowUpSubmitting ||
             (steerOnPrimarySubmit && !composer.canModifierSubmit),
           onModifierSubmit,
           title: composer.isFollowUpSubmitting
             ? "Submitting..."
-            : canSubmit && composer.submitTitle !== undefined
+            : composer.submitTitle !== undefined
               ? composer.submitTitle
               : isStopping
                 ? "Queue for after the stop (Enter)"

@@ -55,6 +55,11 @@ import type {
   PromptTextMention,
   ThreadQueuedMessage,
 } from "@bb/domain";
+import {
+  getServerQueuedMessages,
+  isLocalQueuedMessage,
+  type QueuedMessageRow as QueuedMessageRowData,
+} from "@/lib/queued-message-rows";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import {
@@ -120,7 +125,7 @@ export interface QueuedMessageInlineEditor {
 
 export interface QueuedMessagesListProps {
   attachedToComposer: boolean;
-  queuedMessages: readonly ThreadQueuedMessage[];
+  queuedMessages: readonly QueuedMessageRowData[];
   resolveMentionLink?: PromptMentionLinkResolver;
   sendAction: QueuedMessageSendAction;
   sendDisabled: boolean;
@@ -146,7 +151,7 @@ interface QueuedMessagePreviewText {
 
 interface QueuedMessageRowProps {
   senderLabel: string | null;
-  queuedMessage: ThreadQueuedMessage;
+  queuedMessage: QueuedMessageRowData;
   resolveMentionLink?: PromptMentionLinkResolver;
   index: number;
   isProcessing: boolean;
@@ -185,7 +190,7 @@ function getDrawerHeight({
   queuedMessages,
   processingMessageId,
 }: {
-  queuedMessages: readonly ThreadQueuedMessage[];
+  queuedMessages: readonly QueuedMessageRowData[];
   processingMessageId: string | null;
 }): number {
   const rowsHeight =
@@ -196,6 +201,7 @@ function getDrawerHeight({
             total +
             DRAWER_ROW_HEIGHT +
             (queuedMessage.initiator !== "user" ||
+            isLocalQueuedMessage(queuedMessage) ||
             queuedMessageHasWaitLine(queuedMessage) ||
             queuedMessage.id === processingMessageId
               ? queuedMessage.initiator === "agent" &&
@@ -614,7 +620,7 @@ function QueuedMessageFallbackTitle({
   queuedMessage,
 }: {
   compact: boolean;
-  queuedMessage: ThreadQueuedMessage;
+  queuedMessage: Exclude<QueuedMessageRowData, { source: "local" }>;
 }) {
   const now = useSecondTick();
   const title = queuedMessageFallbackTitle({
@@ -635,7 +641,7 @@ function QueuedMessagePreview({
   resolveMentionLink,
 }: {
   compact: boolean;
-  queuedMessage: ThreadQueuedMessage;
+  queuedMessage: QueuedMessageRowData;
   resolveMentionLink?: PromptMentionLinkResolver;
 }) {
   const preview = useMemo(
@@ -650,7 +656,10 @@ function QueuedMessagePreview({
     [queuedMessage.content],
   );
 
-  if (queuedMessage.payload.kind === "retry") {
+  if (
+    !isLocalQueuedMessage(queuedMessage) &&
+    queuedMessage.payload.kind === "retry"
+  ) {
     return (
       <div className="min-w-0 flex-1 overflow-hidden text-foreground">
         <QueuedMessageFallbackTitle
@@ -684,7 +693,7 @@ function QueuedMessageWaitLine({
   queuedMessage,
 }: {
   pluginDisplayName: string;
-  queuedMessage: ThreadQueuedMessage;
+  queuedMessage: Exclude<QueuedMessageRowData, { source: "local" }>;
 }) {
   const now = useSecondTick();
   const label = describeQueuedMessageWait({
@@ -778,21 +787,27 @@ const QueuedMessageRow = memo(function QueuedMessageRow({
     () => countQueuedMessageAttachments(queuedMessage.content),
     [queuedMessage.content],
   );
+  const local = isLocalQueuedMessage(queuedMessage);
   const pluginDisplayName = usePluginDisplayName(
-    queuedMessage.waitingOn?.kind === "plugin"
+    !local && queuedMessage.waitingOn?.kind === "plugin"
       ? queuedMessage.waitingOn.pluginId
       : "",
   );
-  const hasWaitLine = queuedMessageHasWaitLine(queuedMessage);
+  const hasWaitLine =
+    isLocalQueuedMessage(queuedMessage) ||
+    queuedMessageHasWaitLine(queuedMessage);
   const sendAllowed =
+    local ||
     sendAction === "steer-when-ready" ||
     isQueuedMessageSendNowAllowed(queuedMessage.waitingOn);
   const sendAriaLabel =
-    sendAction === "steer-when-ready"
+    !local && sendAction === "steer-when-ready"
       ? `Steer queued message ${index + 1} when ready`
       : `Send queued message ${index + 1} now`;
   const sendLabel =
-    sendAction === "steer-when-ready" ? "Steer when ready" : "Send now";
+    !local && sendAction === "steer-when-ready"
+      ? "Steer when ready"
+      : "Send now";
   const {
     attributes,
     isDragging,
@@ -921,6 +936,39 @@ const QueuedMessageRow = memo(function QueuedMessageRow({
               ) : null}
               {isProcessing ? (
                 <QueuedMessageProcessingLine label={processingLabel} />
+              ) : local ? (
+                <div
+                  data-queued-message-wait=""
+                  data-queued-message-failed={
+                    queuedMessage.deliveryStatus === "rejected" ? "" : undefined
+                  }
+                  className={cn(
+                    "flex min-w-0 items-center gap-1 text-2xs",
+                    queuedMessage.deliveryStatus === "rejected"
+                      ? "text-destructive-text"
+                      : "text-subtle-foreground",
+                  )}
+                >
+                  <Icon
+                    name={
+                      queuedMessage.deliveryStatus === "rejected"
+                        ? "AlertCircle"
+                        : queuedMessage.deliveryStatus === "waiting"
+                          ? "CloudOff"
+                          : "TimeSchedule"
+                    }
+                    className="size-3 shrink-0"
+                    aria-hidden
+                  />
+                  <span className="min-w-0 truncate">
+                    {queuedMessage.deliveryStatus === "rejected"
+                      ? (queuedMessage.error ??
+                        "Message could not be delivered")
+                      : queuedMessage.deliveryStatus === "waiting"
+                        ? "Waiting for connection"
+                        : "Confirming delivery"}
+                  </span>
+                </div>
               ) : hasWaitLine ? (
                 <QueuedMessageWaitLine
                   pluginDisplayName={pluginDisplayName}
@@ -957,8 +1005,10 @@ const QueuedMessageRow = memo(function QueuedMessageRow({
                           "shrink-0 text-muted-foreground",
                           compact ? "size-7" : "size-8",
                         )}
-                        disabled={actionDisabled || sendDisabled}
-                        onClick={() => onSend(queuedMessage.id)}
+                        disabled={actionDisabled || sendDisabled || local}
+                        onClick={() => {
+                          if (!local) onSend(queuedMessage.id);
+                        }}
                         aria-label={sendAriaLabel}
                       >
                         <Icon name="Sent" className="size-4" aria-hidden />
@@ -969,7 +1019,7 @@ const QueuedMessageRow = memo(function QueuedMessageRow({
                     </TooltipContent>
                   </Tooltip>
                 ) : null}
-                {queuedMessage.editable ? (
+                {queuedMessage.editable || local ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -980,8 +1030,9 @@ const QueuedMessageRow = memo(function QueuedMessageRow({
                           "shrink-0 text-muted-foreground",
                           compact ? "size-7" : "size-8",
                         )}
-                        disabled={actionDisabled}
+                        disabled={actionDisabled || !queuedMessage.editable}
                         onClick={() =>
+                          queuedMessage.editable &&
                           onEdit({
                             queuedMessageId: queuedMessage.id,
                             queuedMessageIndex: index,
@@ -1007,8 +1058,13 @@ const QueuedMessageRow = memo(function QueuedMessageRow({
                         "shrink-0 text-muted-foreground hover:text-destructive max-md:text-destructive",
                         compact ? "size-7" : "size-8",
                       )}
-                      disabled={actionDisabled}
-                      onClick={() => onDelete(queuedMessage.id)}
+                      disabled={
+                        actionDisabled || (local && !queuedMessage.editable)
+                      }
+                      onClick={() => {
+                        if (!local || queuedMessage.editable)
+                          onDelete(queuedMessage.id);
+                      }}
                       aria-label={`Delete queued message ${index + 1}`}
                     >
                       <Icon name="Trash2" className="size-4" aria-hidden />
@@ -1411,7 +1467,7 @@ export function QueuedMessagesList({
   const orderKey = queuedMessages
     .map(
       (queuedMessage) =>
-        `${queuedMessage.id}:${queuedMessage.groupWithNext ? "1" : "0"}:${queuedMessage.updatedAt}`,
+        `${queuedMessage.id}:${queuedMessage.groupWithNext ? "1" : "0"}:${queuedMessage.updatedAt}:${isLocalQueuedMessage(queuedMessage) ? queuedMessage.deliveryStatus : "server"}`,
     )
     .join("|");
   const [syncedOrderKey, setSyncedOrderKey] = useState(orderKey);
@@ -1438,7 +1494,10 @@ export function QueuedMessagesList({
     ];
   }, [groupBoundaryIndex, orderedMessages]);
   const sortingDisabled =
-    actionDisabled || processingMessageId !== null || queuedMessages.length < 2;
+    actionDisabled ||
+    processingMessageId !== null ||
+    queuedMessages.length < 2 ||
+    queuedMessages.some(isLocalQueuedMessage);
   const sortableIds = useMemo(
     () =>
       inlineEditor
@@ -1452,14 +1511,14 @@ export function QueuedMessagesList({
   );
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
-      if (!event.over) {
+      if (!event.over || sortingDisabled) {
         return;
       }
 
       const dragResult = resolveQueuedMessageDrag({
         activeId: String(event.active.id),
         combinedIds,
-        orderedMessages,
+        orderedMessages: getServerQueuedMessages(orderedMessages),
         overId: String(event.over.id),
       });
       if (!dragResult) return;
@@ -1473,7 +1532,13 @@ export function QueuedMessagesList({
 
       onReorder(dragResult.request);
     },
-    [combinedIds, onReorder, onSetGroupBoundary, orderedMessages],
+    [
+      combinedIds,
+      onReorder,
+      onSetGroupBoundary,
+      orderedMessages,
+      sortingDisabled,
+    ],
   );
   const restrictToListBounds = useCallback<Modifier>(
     ({ draggingNodeRect, transform }) => {

@@ -12,6 +12,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { threadsQueryKey } from "@/hooks/queries/query-keys";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ThreadQueuedMessage } from "@bb/domain";
+import type {
+  LocalQueuedMessageRow,
+  QueuedMessageRow,
+} from "@/lib/queued-message-rows";
 import {
   makeThreadListEntry,
   makeThreadQueuedMessage,
@@ -118,7 +122,7 @@ function rect({ top, bottom }: { top: number; bottom: number }) {
 }
 
 function renderQueuedMessages(
-  queuedMessages: readonly ThreadQueuedMessage[],
+  queuedMessages: readonly QueuedMessageRow[],
   attachedToComposer = true,
 ) {
   return render(
@@ -1954,5 +1958,82 @@ describe("queued row affordances", () => {
     ]);
     expect(queryByLabelText("Edit queued message 1")).toBeNull();
     expect(queryByLabelText("Delete queued message 1")).not.toBeNull();
+  });
+});
+
+describe("local message delivery rows", () => {
+  function localRow(editable: boolean): LocalQueuedMessageRow {
+    return {
+      source: "local",
+      id: "local-pending",
+      threadId: "thr_prompt_pills",
+      clientSubmissionId: "submission-pending",
+      content: [{ type: "text", text: "Saved before reconnect", mentions: [] }],
+      model: undefined,
+      reasoningLevel: undefined,
+      permissionMode: undefined,
+      serviceTier: undefined,
+      initiator: "user",
+      senderThreadId: null,
+      groupWithNext: false,
+      createdAt: 1,
+      updatedAt: 1,
+      editable,
+      deliveryStatus: editable ? "waiting" : "confirming",
+      error: null,
+    };
+  }
+
+  it("keeps Send now visible but disabled while an uncertain row blocks editing and deletion", () => {
+    const { getByRole, getByText } = renderQueuedMessages([localRow(false)]);
+    expect(getByText("Confirming delivery")).toBeTruthy();
+    expect(
+      getByRole("button", { name: "Send queued message 1 now" }).hasAttribute(
+        "disabled",
+      ),
+    ).toBe(true);
+    expect(
+      getByRole("button", { name: "Edit queued message 1" }).hasAttribute(
+        "disabled",
+      ),
+    ).toBe(true);
+    expect(
+      getByRole("button", { name: "Delete queued message 1" }).hasAttribute(
+        "disabled",
+      ),
+    ).toBe(true);
+  });
+
+  it("uses the existing actions for unattempted rows and disables grouping across server and local rows", () => {
+    const { getByRole, getByText } = renderQueuedMessages([
+      makeQueuedMessage("server-one", "Server queued"),
+      localRow(true),
+    ]);
+    expect(getByText("Waiting for connection")).toBeTruthy();
+    expect(
+      getByRole("button", { name: "Send queued message 2 now" }).hasAttribute(
+        "disabled",
+      ),
+    ).toBe(true);
+    expect(
+      getByRole("button", { name: "Edit queued message 2" }).hasAttribute(
+        "disabled",
+      ),
+    ).toBe(false);
+    expect(
+      getByRole("button", { name: "Delete queued message 2" }).hasAttribute(
+        "disabled",
+      ),
+    ).toBe(false);
+    expect(
+      getByRole("button", { name: "Reorder queued message 1" }).hasAttribute(
+        "disabled",
+      ),
+    ).toBe(true);
+    expect(
+      getByRole("button", {
+        name: "Messages above send together",
+      }).hasAttribute("disabled"),
+    ).toBe(true);
   });
 });

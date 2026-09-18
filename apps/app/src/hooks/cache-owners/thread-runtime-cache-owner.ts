@@ -1006,6 +1006,14 @@ export function applySendThreadMessageSuccess({
   result,
   transaction,
 }: ApplySendThreadMessageSuccessArgs): void {
+  if (result.clientSubmissionId !== undefined) {
+    invalidateThreadAcceptedMessageQueriesWithoutRealtime({
+      queryClient,
+      threadId: request.id,
+    });
+    invalidateThreadQueueQueries({ queryClient, threadId: request.id });
+    return;
+  }
   const optimisticCreatedAt = transaction?.optimisticCreatedAt ?? Date.now();
   if (result.delivery === "queued") {
     const optimisticTimelineRowRemoved =
@@ -1127,6 +1135,10 @@ export function applyQueuedMessageCreateResult({
   threadId,
   transaction,
 }: QueuedMessageSuccessArgs): void {
+  if (queuedMessage.clientSubmissionId !== undefined) {
+    invalidateThreadQueueQueries({ queryClient, threadId });
+    return;
+  }
   queryClient.setQueryData<ThreadQueuedMessageListResponse>(
     threadQueuedMessagesQueryKey(threadId),
     (currentQueuedMessages) => {

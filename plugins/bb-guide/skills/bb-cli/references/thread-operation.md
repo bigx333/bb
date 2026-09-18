@@ -12,6 +12,16 @@
 <seconds>` when you need a shorter or longer budget.
 - Use `bb thread tell <thread-id> "..."` when requirements change, a blocker
   needs clarification, or follow-up work is needed.
+- For connection-failure retries of ordinary messages, pass the same
+  `--submission-id <id>` (1–128 characters) to `bb thread tell` or
+  `bb thread queue create`, with identical content/options. Tell defaults to
+  queue mode when this flag is supplied; steering and conversation commands
+  are excluded. Preserve uploaded attachment paths and absolute scheduled
+  times across retries. SDK equivalents accept `clientSubmissionId` and
+  `signal`. Only retry automatically while system config advertises
+  `featureFlags.durableMessageDelivery: true`; otherwise retain and pause.
+  A `replayed` queued response describes historical acceptance, so refresh the
+  queue instead of inserting that response as a live row.
 - Add `--plan` to `bb thread spawn` or `bb thread tell` to send the prompt as
   the provider's structured `/plan` action: the agent proposes a plan for
   approval before executing when supported by the provider. Plain `/plan ...` text is

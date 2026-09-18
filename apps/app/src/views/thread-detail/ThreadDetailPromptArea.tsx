@@ -74,6 +74,12 @@ import type { MachineLabelHost } from "@/components/machines/MachineLabel";
 import type { MachineProviderPresentation } from "@/components/plugin/MachineProviderIcon";
 import type { WorkspaceCheckoutDisplay } from "@/lib/workspace-checkout-display";
 import { useComposerTextEffects } from "@/lib/composer-text-effects";
+import { useQueuedMessageRows } from "@/hooks/useQueuedMessageRows";
+import { getServerQueuedMessages } from "@/lib/queued-message-rows";
+import {
+  isDurableMessageInput,
+  useDurableMessageSubmission,
+} from "@/hooks/useDurableMessageSubmission";
 import { useLatestRef } from "@/hooks/useLatestRef";
 import { useThreadCreationOptions } from "@/hooks/useThreadCreationOptions";
 import { useProjectDisplayName } from "@/hooks/queries/sidebar-navigation-query";
@@ -425,11 +431,15 @@ export function ThreadDetailPromptArea({
   const queuedMessagesQuery = useThreadQueuedMessages(thread.id, {
     enabled: true,
   });
-  const queuedMessages = queuedMessagesQuery.data ?? EMPTY_QUEUED_MESSAGES;
+  const serverQueuedMessages =
+    queuedMessagesQuery.data ?? EMPTY_QUEUED_MESSAGES;
+  const queuedMessages = useQueuedMessageRows(thread.id, serverQueuedMessages);
+  const durableSubmission = useDurableMessageSubmission(thread.id);
   const queuedMessagesPending =
-    queuedMessagesQuery.data === undefined && queuedMessageCount > 0;
-  const queuedMessagesRef =
-    useLatestRef<readonly ThreadQueuedMessage[]>(queuedMessages);
+    queuedMessagesQuery.data === undefined &&
+    queuedMessageCount > 0 &&
+    queuedMessages.length === 0;
+  const queuedMessagesRef = useLatestRef(queuedMessages);
   const [bottomPluginFocusNonce, setBottomPluginFocusNonce] = useState(0);
   const [editFocusNonce, setEditFocusNonce] = useState(0);
   const focusBottomPluginComposer = useCallback(() => {
@@ -869,6 +879,7 @@ export function ThreadDetailPromptArea({
     queuedMessageActionPending ||
     isFollowUpShortcutSending;
   const isFollowUpSubmitting =
+    durableSubmission.isSaving ||
     sendMessage.isPending ||
     createQueuedMessage.isPending ||
     createThread.isPending ||
@@ -951,14 +962,16 @@ export function ThreadDetailPromptArea({
     ],
   );
   const hasPromptDraftInput = currentPromptDraftInput.length > 0;
-  const canSubmitModifierShortcut = canSubmitFollowUpShortcut({
-    hasPromptDraftInput,
-    isFollowUpSubmitting,
-    isQueueMutationPending,
-    queuedMessageCount: queuedMessages.length,
-    runtimeDisplayStatus,
-    submitModeKind: submitMode.kind,
-  });
+  const canSubmitModifierShortcut =
+    durableSubmission.connected &&
+    canSubmitFollowUpShortcut({
+      hasPromptDraftInput,
+      isFollowUpSubmitting,
+      isQueueMutationPending,
+      queuedMessageCount: queuedMessages.length,
+      runtimeDisplayStatus,
+      submitModeKind: submitMode.kind,
+    });
   const followUpExecutionSelection = useMemo<FollowUpExecutionSelection>(() => {
     if (!hasConcreteDefaultExecutionOptions) {
       return null;
@@ -1034,7 +1047,11 @@ export function ThreadDetailPromptArea({
   );
 
   const handleSend = useCallback(async () => {
-    if (isFollowUpSubmitting) {
+    if (
+      isFollowUpSubmitting ||
+      (!durableSubmission.connected &&
+        !shouldQueueFollowUpMessage(runtimeDisplayStatus))
+    ) {
       return;
     }
     const submittedDraft = currentPromptDraft;
@@ -1063,8 +1080,19 @@ export function ThreadDetailPromptArea({
           execution: followUpExecutionSelection,
         });
         if (request) {
-          await createQueuedMessage.mutateAsync(request);
-          promptDraft.clearIfCurrentMatches(submittedDraft);
+          if (
+            durableSubmission.enabled &&
+            isDurableMessageInput(submittedInput)
+          ) {
+            const { id: _threadId, ...payload } = request;
+            await durableSubmission.enqueue(
+              { kind: "queue", request: payload },
+              { storageKey: promptDraft.storageKey, value: submittedDraft },
+            );
+          } else {
+            await createQueuedMessage.mutateAsync(request);
+            promptDraft.clearIfCurrentMatches(submittedDraft);
+          }
         }
       } else {
         const request = buildAutoFollowUpRequest({
@@ -1073,8 +1101,19 @@ export function ThreadDetailPromptArea({
           execution: followUpExecutionSelection,
         });
         if (request) {
-          await sendMessage.mutateAsync(request);
-          promptDraft.clearIfCurrentMatches(submittedDraft);
+          if (
+            durableSubmission.enabled &&
+            isDurableMessageInput(submittedInput)
+          ) {
+            const { id: _threadId, ...payload } = request;
+            await durableSubmission.enqueue(
+              { kind: "send", request: payload },
+              { storageKey: promptDraft.storageKey, value: submittedDraft },
+            );
+          } else {
+            await sendMessage.mutateAsync(request);
+            promptDraft.clearIfCurrentMatches(submittedDraft);
+          }
         }
       }
     } catch (nextError) {
@@ -1089,6 +1128,7 @@ export function ThreadDetailPromptArea({
   }, [
     createHandoffThread,
     createQueuedMessage,
+    durableSubmission,
     currentPromptDraft,
     currentPromptDraftInput,
     followUpExecutionSelection,
@@ -1106,6 +1146,12 @@ export function ThreadDetailPromptArea({
       submitOptions: ExperimentalComposerSubmitOptions,
       pluginSubmission: SendMessageRequest["pluginSubmission"],
     ) => {
+      if (
+        !durableSubmission.connected &&
+        !shouldQueueFollowUpMessage(runtimeDisplayStatus)
+      ) {
+        throw new Error("Waiting for connection.");
+      }
       if (isFollowUpSubmitting) {
         throw new Error("A message is still being submitted.");
       }
@@ -1148,14 +1194,25 @@ export function ThreadDetailPromptArea({
       }
       setBottomAttachmentError(null);
       try {
-        await sendMessage.mutateAsync({
+        const submissionRequest = {
           ...request,
           ...(submitOptions.sendAt === undefined
             ? {}
             : { sendAt: submitOptions.sendAt }),
           ...(pluginSubmission === undefined ? {} : { pluginSubmission }),
-        });
-        promptDraft.clearIfCurrentMatches(submittedDraft);
+        };
+        if (durableSubmission.enabled && isDurableMessageInput(request.input)) {
+          const { id: _threadId, ...payload } = submissionRequest;
+          const saved = await durableSubmission.enqueue(
+            { kind: "send", request: payload },
+            { storageKey: promptDraft.storageKey, value: submittedDraft },
+            true,
+          );
+          await saved.acceptance;
+        } else {
+          await sendMessage.mutateAsync(submissionRequest);
+          promptDraft.clearIfCurrentMatches(submittedDraft);
+        }
       } catch (scheduleError) {
         throw new Error(
           getMutationErrorMessage({
@@ -1168,6 +1225,8 @@ export function ThreadDetailPromptArea({
     },
     [
       createHandoffThread,
+      durableSubmission,
+      runtimeDisplayStatus,
       effectiveSelectedModel,
       followUpExecutionSelection,
       isDefaultExecutionOptionsLoading,
@@ -1193,7 +1252,7 @@ export function ThreadDetailPromptArea({
     const shortcutRequest = buildFollowUpShortcutRequest({
       execution: followUpExecutionSelection,
       input: submittedInput,
-      queuedMessages: queuedMessagesRef.current,
+      queuedMessages: getServerQueuedMessages(queuedMessagesRef.current),
       threadId: thread.id,
     });
     if (!shortcutRequest) {
@@ -1326,12 +1385,21 @@ export function ThreadDetailPromptArea({
       compactPromptPlaceholder,
       promptPlaceholder,
       canModifierSubmit: canSubmitModifierShortcut,
-      steerActiveThreadOnEnter,
+      steerActiveThreadOnEnter:
+        durableSubmission.connected && steerActiveThreadOnEnter,
+      submitDisabled:
+        !durableSubmission.connected &&
+        !shouldQueueFollowUpMessage(runtimeDisplayStatus),
+      ...(!durableSubmission.connected &&
+      !shouldQueueFollowUpMessage(runtimeDisplayStatus)
+        ? { submitTitle: "Waiting for connection" }
+        : {}),
       submitMode,
       threadRuntimeDisplayStatus: runtimeDisplayStatus,
     }),
     [
       canSubmitModifierShortcut,
+      durableSubmission.connected,
       compactPromptPlaceholder,
       currentPromptDraft,
       handleBottomComposerModifierSubmit,
@@ -1480,16 +1548,22 @@ export function ThreadDetailPromptArea({
       ...compactExecutionConfig,
       model: {
         ...compactExecutionConfig.model,
-        active: { model: inlineEditingQueuedMessage.model },
-        selected: inlineEditingQueuedMessage.model,
+        active: inlineEditingQueuedMessage.model
+          ? { model: inlineEditingQueuedMessage.model }
+          : undefined,
+        selected: inlineEditingQueuedMessage.model ?? "",
       },
       serviceTier: {
         ...compactExecutionConfig.serviceTier,
-        value: inlineEditingQueuedMessage.serviceTier,
+        value:
+          inlineEditingQueuedMessage.serviceTier ??
+          compactExecutionConfig.serviceTier?.value,
       },
       reasoning: {
         ...compactExecutionConfig.reasoning,
-        value: inlineEditingQueuedMessage.reasoningLevel,
+        value:
+          inlineEditingQueuedMessage.reasoningLevel ??
+          compactExecutionConfig.reasoning.value,
       },
     };
   }, [compactExecutionConfig, inlineEditingQueuedMessage]);
@@ -1905,6 +1979,7 @@ export function ThreadDetailPromptArea({
             inlineEditor={queuedMessageEditor ?? undefined}
             sendAction={shouldSteerWhenReady ? "steer-when-ready" : "send-now"}
             sendDisabled={
+              !durableSubmission.connected ||
               submitMode.kind === "blocked" ||
               runtimeDisplayStatus === "waiting-for-host" ||
               isFollowUpSubmitting ||
@@ -1924,6 +1999,7 @@ export function ThreadDetailPromptArea({
     ),
     [
       canUseGitUi,
+      durableSubmission.connected,
       childPendingInteractionBanners,
       contextBannerMergeBase,
       environmentHostId,

@@ -15,6 +15,7 @@ import { z } from "zod";
 import { ApiError } from "../../errors.js";
 
 interface StoredQueuedThreadMessageRow {
+  clientSubmissionId?: string | null;
   claimedAt: number | null;
   content: string;
   createdAt: number;
@@ -131,6 +132,9 @@ export function toThreadQueuedMessage(
         : row.senderThreadId !== null
           ? "agent"
           : "user",
+    ...(row.clientSubmissionId == null
+      ? {}
+      : { clientSubmissionId: row.clientSubmissionId }),
     senderThreadId: row.senderThreadId,
     threadId: row.threadId,
     content: parseStoredQueuedThreadMessageContent(row),

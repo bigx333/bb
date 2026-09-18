@@ -73,6 +73,11 @@ import {
 } from "@bb/client-core";
 import { useActiveComposerDraft } from "./useActiveComposerDraft";
 import { useComposerAttachmentUploads } from "./useComposerAttachmentUploads";
+import { useQueuedMessageRows } from "@/hooks/useQueuedMessageRows";
+import {
+  isDurableMessageInput,
+  useDurableMessageSubmission,
+} from "@/hooks/useDurableMessageSubmission";
 import { useLatestRef } from "@/hooks/useLatestRef";
 import { useComposerTypeahead } from "./useComposerTypeahead";
 import { useInlineQueuedMessageEditing } from "./useInlineQueuedMessageEditing";
@@ -261,7 +266,9 @@ function EmbeddedThreadChatWithComposer({
     markThreadRead,
     thread: threadQuery.data,
   });
-  const { data: queuedMessages = [] } = useThreadQueuedMessages(threadId);
+  const { data: serverQueuedMessages = [] } = useThreadQueuedMessages(threadId);
+  const queuedMessages = useQueuedMessageRows(threadId, serverQueuedMessages);
+  const durableSubmission = useDurableMessageSubmission(threadId);
 
   const executionOptionsQuery = useThreadDefaultExecutionOptions(
     composer.executionDefaultsThreadId,
@@ -493,6 +500,9 @@ function EmbeddedThreadChatWithComposer({
     const submittedInput = currentPromptDraftInput;
     if (
       submittedInput.length === 0 ||
+      durableSubmission.isSaving ||
+      (!durableSubmission.connected &&
+        !shouldQueueFollowUpMessage(displayStatus)) ||
       isTurnSubmitting ||
       sendThreadMessage.isPending ||
       createQueuedMessage.isPending
@@ -501,9 +511,29 @@ function EmbeddedThreadChatWithComposer({
     }
     setBottomAttachmentError(null);
     setIsTurnSubmitting(true);
-    void defaultSendOrQueueInput(submittedInput)
+    const durablyQueued =
+      durableSubmission.enabled && isDurableMessageInput(submittedInput);
+    const submission = durablyQueued
+      ? durableSubmission.enqueue(
+          shouldQueueFollowUpMessage(displayStatus)
+            ? {
+                kind: "queue",
+                request: { input: submittedInput, ...executionRequestFields },
+              }
+            : {
+                kind: "send",
+                request: {
+                  input: submittedInput,
+                  mode: "queue-if-active",
+                  ...executionRequestFields,
+                },
+              },
+          { storageKey: promptDraft.storageKey, value: submittedDraft },
+        )
+      : defaultSendOrQueueInput(submittedInput);
+    void submission
       .then(() => {
-        promptDraft.clearIfCurrentMatches(submittedDraft);
+        if (!durablyQueued) promptDraft.clearIfCurrentMatches(submittedDraft);
       })
       .catch((error) => {
         if (!isMountedRef.current) {
@@ -527,6 +557,8 @@ function EmbeddedThreadChatWithComposer({
     currentPromptDraft,
     currentPromptDraftInput,
     defaultSendOrQueueInput,
+    durableSubmission,
+    executionRequestFields,
     displayStatus,
     isTurnSubmitting,
     sendThreadMessage.isPending,
@@ -547,14 +579,19 @@ function EmbeddedThreadChatWithComposer({
     [isProvisioning, sendQueuedMessageById],
   );
   const hasPromptDraftInput = currentPromptDraftInput.length > 0;
-  const canSubmitModifierShortcut = canSubmitFollowUpShortcut({
-    hasPromptDraftInput,
-    isFollowUpSubmitting: isTurnSubmitting || sendThreadMessage.isPending,
-    isQueueMutationPending,
-    queuedMessageCount: queuedMessages.length,
-    runtimeDisplayStatus: displayStatus,
-    submitModeKind: submitMode.kind,
-  });
+  const canSubmitModifierShortcut =
+    durableSubmission.connected &&
+    canSubmitFollowUpShortcut({
+      hasPromptDraftInput,
+      isFollowUpSubmitting:
+        durableSubmission.isSaving ||
+        isTurnSubmitting ||
+        sendThreadMessage.isPending,
+      isQueueMutationPending,
+      queuedMessageCount: queuedMessages.length,
+      runtimeDisplayStatus: displayStatus,
+      submitModeKind: submitMode.kind,
+    });
   const handleModifierSubmit = useCallback(() => {
     if (!canSubmitModifierShortcut) {
       return;
@@ -806,6 +843,7 @@ function EmbeddedThreadChatWithComposer({
         onSelectEntry: promptDraft.setDraft,
       } satisfies HistoryConfig,
       isFollowUpSubmitting:
+        durableSubmission.isSaving ||
         isTurnSubmitting ||
         sendThreadMessage.isPending ||
         createQueuedMessage.isPending,
@@ -817,7 +855,15 @@ function EmbeddedThreadChatWithComposer({
       compactPromptPlaceholder: composerPlaceholder,
       promptPlaceholder: composerPlaceholder,
       canModifierSubmit: canSubmitModifierShortcut,
-      steerActiveThreadOnEnter,
+      steerActiveThreadOnEnter:
+        durableSubmission.connected && steerActiveThreadOnEnter,
+      submitDisabled:
+        !durableSubmission.connected &&
+        !shouldQueueFollowUpMessage(displayStatus),
+      ...(!durableSubmission.connected &&
+      !shouldQueueFollowUpMessage(displayStatus)
+        ? { submitTitle: "Waiting for connection" }
+        : {}),
       submitMode,
       threadRuntimeDisplayStatus: displayStatus,
     }),
@@ -825,8 +871,10 @@ function EmbeddedThreadChatWithComposer({
       canSubmitModifierShortcut,
       composerPlaceholder,
       createQueuedMessage.isPending,
-      currentPromptDraft,
+      durableSubmission.connected,
+      durableSubmission.isSaving,
       displayStatus,
+      currentPromptDraft,
       handleModifierSubmit,
       handleSubmit,
       isTurnSubmitting,
@@ -973,11 +1021,15 @@ function EmbeddedThreadChatWithComposer({
             ...bottomExecutionConfig,
             model: {
               ...bottomExecutionConfig.model,
-              active: { model: inlineEditingQueuedMessage.model },
-              selected: inlineEditingQueuedMessage.model,
+              active: inlineEditingQueuedMessage.model
+                ? { model: inlineEditingQueuedMessage.model }
+                : undefined,
+              selected: inlineEditingQueuedMessage.model ?? "",
             },
             serviceTier: {
-              value: inlineEditingQueuedMessage.serviceTier,
+              value:
+                inlineEditingQueuedMessage.serviceTier ??
+                bottomExecutionConfig.serviceTier?.value,
               onChange: setServiceTier,
               supported: supportsServiceTier,
               supportByProvider: serviceTierSupportByProvider,
@@ -985,7 +1037,9 @@ function EmbeddedThreadChatWithComposer({
             },
             reasoning: {
               ...bottomExecutionConfig.reasoning,
-              value: inlineEditingQueuedMessage.reasoningLevel,
+              value:
+                inlineEditingQueuedMessage.reasoningLevel ??
+                bottomExecutionConfig.reasoning.value,
             },
           }
         : null,
@@ -1087,14 +1141,17 @@ function EmbeddedThreadChatWithComposer({
 
   const queuedMessagesStack = useMemo(
     () =>
-      queuedMessages.length > 0 && !pendingInteractionOccupiesComposer ? (
+      (queuedMessages.length > 0 || inlineEditor !== undefined) &&
+      !pendingInteractionOccupiesComposer ? (
         <QueuedMessagesList
           attachedToComposer
           queuedMessages={queuedMessages}
           resolveMentionLink={resolveMentionLink}
           inlineEditor={inlineEditor}
           sendAction={isProvisioning ? "steer-when-ready" : "send-now"}
-          sendDisabled={queuedMessageActionPending}
+          sendDisabled={
+            !durableSubmission.connected || queuedMessageActionPending
+          }
           actionDisabled={queuedMessageActionPending}
           processingMessageId={processingQueuedMessage?.id ?? null}
           processingAction={processingQueuedMessage?.action ?? null}
@@ -1106,6 +1163,7 @@ function EmbeddedThreadChatWithComposer({
         />
       ) : null,
     [
+      durableSubmission.connected,
       beginEditQueuedMessage,
       handleDeleteQueuedMessage,
       handleReorderQueuedMessage,

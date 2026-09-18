@@ -22,6 +22,7 @@ import {
   threadOriginKindSchema,
   threadListEntrySchema,
   threadQueuedMessageSchema,
+  clientSubmissionIdSchema,
   threadSearchSourceKindSchema,
   threadStatusSchema,
   threadTimelineActivePromptModeSchema,
@@ -259,7 +260,9 @@ const sendMessageRequestFieldsSchema = z.object({
   sendAt: z.number().int().nonnegative().optional(),
 });
 
-export const sendMessageRequestSchema = sendMessageRequestFieldsSchema;
+export const sendMessageRequestSchema = sendMessageRequestFieldsSchema.extend({
+  clientSubmissionId: clientSubmissionIdSchema.optional(),
+});
 export type SendMessageRequest = z.infer<typeof sendMessageRequestSchema>;
 
 /**
@@ -280,10 +283,18 @@ export type SendMessageDelivery = z.infer<typeof sendMessageDeliverySchema>;
  * for now" would invite every caller to check fields that cannot exist.
  */
 export const sendMessageResponseSchema = z.discriminatedUnion("delivery", [
-  z.object({ ok: z.literal(true), delivery: z.literal("sent") }),
+  z.object({
+    ok: z.literal(true),
+    delivery: z.literal("sent"),
+    clientSubmissionId: clientSubmissionIdSchema.optional(),
+    replayed: z.boolean().optional(),
+    turnRequestId: clientTurnRequestIdSchema.optional(),
+  }),
   z.object({
     ok: z.literal(true),
     delivery: z.literal("queued"),
+    clientSubmissionId: clientSubmissionIdSchema.optional(),
+    replayed: z.boolean().optional(),
     queuedMessage: threadQueuedMessageSchema,
   }),
 ]);
@@ -370,6 +381,7 @@ export const sendQueuedMessageModeSchema = z.enum(["auto", "steer"]);
 export type SendQueuedMessageMode = z.infer<typeof sendQueuedMessageModeSchema>;
 
 export const createQueuedMessageRequestSchema = z.object({
+  clientSubmissionId: clientSubmissionIdSchema.optional(),
   input: z.array(promptInputSchema).min(1),
   model: z.string().optional(),
   serviceTier: serviceTierSchema.optional(),

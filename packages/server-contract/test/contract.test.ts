@@ -54,8 +54,15 @@ const OPTIONAL_SERVER_FIELD_GROUP_LIMIT = 31;
 const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
   {
     reason:
-      "Timeline snapshot fields are absent on older servers; content metadata and detail continuation inputs only apply to paginated content.",
+      "Timeline and submission correlation fields are absent on older servers or legacy requests; content metadata and detail continuation inputs only apply to paginated content.",
     fields: [
+      "createQueuedMessageRequestSchema.clientSubmissionId",
+      "sendMessageRequestSchema.clientSubmissionId",
+      "sendQueuedMessageResponseSchema.clientSubmissionId",
+      "sendQueuedMessageResponseSchema.replayed",
+      "sendQueuedMessageResponseSchema.turnRequestId",
+      "sendQueuedMessageResponseSchema.queuedMessage.clientSubmissionId",
+      "sendQueuedMessageResponseSchema.queuedMessage.replayed",
       "threadTimelineResponseSchema.timelinePage.contentPage",
       "threadTimelineResponseSchema.timelinePage.historySnapshot",
       "threadTimelineResponseSchema.timelinePage.olderRowsSourceSeqEnd",
@@ -868,6 +875,36 @@ describe("server-contract canonical schemas", () => {
         ownsPath: false,
       }),
     ).toMatchObject({ ownsPath: false });
+  });
+
+  it("accepts optional bounded nanoid submission IDs and legacy response shapes", () => {
+    for (const schema of [
+      sendMessageRequestSchema,
+      createQueuedMessageRequestSchema,
+    ]) {
+      const payload = {
+        input: [{ type: "text", text: "keep this" }],
+        mode: "start",
+      };
+      expect(schema.parse(payload)).not.toHaveProperty("clientSubmissionId");
+      expect(
+        schema.parse({ ...payload, clientSubmissionId: "nanoid_With-dashes" }),
+      ).toHaveProperty("clientSubmissionId", "nanoid_With-dashes");
+      for (const clientSubmissionId of ["", "x".repeat(129)])
+        expect(() =>
+          schema.parse({ ...payload, clientSubmissionId }),
+        ).toThrow();
+    }
+    expect(
+      contract.sendMessageResponseSchema.parse({ ok: true, delivery: "sent" }),
+    ).toEqual({ ok: true, delivery: "sent" });
+    expect(() =>
+      contract.editMessageRequestSchema.parse({
+        operationId: "edit",
+        input: [{ type: "text", text: "edit" }],
+        clientSubmissionId: "not-supported",
+      }),
+    ).toThrow();
   });
 
   it("parses request contracts", () => {

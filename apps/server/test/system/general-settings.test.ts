@@ -16,6 +16,7 @@ describe("general settings", () => {
         showUnhandledProviderEvents: false,
       });
       expect(body.primaryHostId).toBeNull();
+      expect(body.featureFlags.durableMessageDelivery).toBe(true);
     });
   });
 

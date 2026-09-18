@@ -246,6 +246,7 @@ Opening threads and files in the app:
 Messaging:
 
   bb thread tell <id> <message>            Send a follow-up message
+    --submission-id <id>                  Stable ID for retrying an ordinary follow-up
     --mode <mode>                          Message mode: steer (default), queue, or auto
     --model <model>                        Model override for this turn
     --reasoning-level <level>              Reasoning level override
@@ -266,6 +267,23 @@ Messaging:
   and a queued answer carries the complete row as `queuedMessage`, including
   its `id`, `waitingOn`, and `sendAt`. A deferred message waits for a thread
   that failed while it was deferred, and delivers when the thread is retried.
+
+  --submission-id uses a stable 1–128 character ID for an ordinary message.
+  With it, tell defaults to queue mode: a delayed message stays a follow-up
+  instead of steering a later turn. Steering and conversation commands cannot
+  use submission IDs. Retrying the same ID and identical payload replays its
+  original acceptance, even after queue consumption, archiving, or restart;
+  changed content/options return a conflict. Reuse uploaded attachment paths
+  and an absolute --send-at timestamp across retries.
+  SDK callers pass clientSubmissionId and optional signal to threads.send or
+  threads.queuedMessages.create. Confirm system config featureFlags contains
+  durableMessageDelivery: true before automatic retries; absence means stop
+  replaying and retain the message. A replayed queued response is historical:
+  refresh queue state instead of inserting it as a current row.
+  A definitive error may include details.submission with the matching
+  clientSubmissionId and acceptance: rejected after the attempt settles; only
+  that marker resolves uncertainty from an earlier lost response. Ordinary
+  status/code alone does not prove that the earlier request was unaccepted.
 
   --plan sends the same structured /plan command the composer's plan action
   sends, so the agent proposes a plan for approval before executing (Claude
@@ -340,7 +358,7 @@ Interactions:
 Queued messages:
 
   bb thread queue list [<thread-id>] [--wait-holder plugin:<plugin-id>]
-  bb thread queue create <thread-id> <message>
+  bb thread queue create <thread-id> <message> [--submission-id <id>]
   bb thread queue update <thread-id> <message-id> <message> [--file <path>] [--image <path>]
   bb thread queue send <thread-id> <message-id> [--mode auto|steer]
   bb thread queue reorder <thread-id> <message-id> [--after <id>] [--before <id>]

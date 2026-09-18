@@ -4,6 +4,8 @@ import { act, cleanup, render, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getPromptDraftAccessor,
+  preparePromptDraftSubmission,
+  completePromptDraftSubmission,
   usePromptDraftInputThreadIds,
   usePromptDraftStorage,
 } from "./usePromptDraftStorage";
@@ -381,5 +383,126 @@ describe("usePromptDraftStorage addQuote", () => {
     act(() => first.result.current.addQuote("shared selection"));
 
     expect(second.result.current.text).toBe("> shared selection\n");
+  });
+});
+
+describe("prompt submission handoff", () => {
+  it("persists a compatible marked draft and cancels stale deferred writes before clearing", () => {
+    vi.useFakeTimers();
+    const scope = uniqueScope();
+    const { result } = renderHook(() => usePromptDraftStorage(scope));
+    act(() => result.current.setTextAndMentions("Saved submission", []));
+    const draft = result.current.getCurrent();
+    const key = result.current.storageKey;
+    act(() => preparePromptDraftSubmission(key, draft, "submission-one"));
+    expect(JSON.parse(localStorage.getItem(key) ?? "null")).toMatchObject({
+      text: draft.text,
+      mentions: [],
+      attachments: [],
+      submissionHandoffId: "submission-one",
+    });
+    expect(result.current.getCurrent()).toEqual(draft);
+    act(() =>
+      expect(completePromptDraftSubmission(key, draft, "submission-one")).toBe(
+        "cleared",
+      ),
+    );
+    act(() => vi.advanceTimersByTime(500));
+    expect(localStorage.getItem(key)).toBeNull();
+    expect(result.current.text).toBe("");
+  });
+
+  it("preserves a newer identical draft because an edit removes its handoff identity", () => {
+    vi.useFakeTimers();
+    const scope = uniqueScope();
+    const { result } = renderHook(() => usePromptDraftStorage(scope));
+    act(() => result.current.setTextAndMentions("Repeated text", []));
+    const draft = result.current.getCurrent();
+    const key = result.current.storageKey;
+    act(() => preparePromptDraftSubmission(key, draft, "original-submission"));
+    act(() => result.current.setTextAndMentions("Different text", []));
+    act(() => result.current.setTextAndMentions("Repeated text", []));
+    expect(
+      completePromptDraftSubmission(key, draft, "original-submission"),
+    ).toBe("preserved");
+    act(() => vi.advanceTimersByTime(500));
+    expect(result.current.text).toBe("Repeated text");
+    expect(JSON.parse(localStorage.getItem(key) ?? "null")).not.toHaveProperty(
+      "submissionHandoffId",
+    );
+  });
+
+  it("throws on marker persistence failure while keeping the full current draft", () => {
+    const accessor = getPromptDraftAccessor(uniqueScope());
+    const draft = {
+      text: "Keep my draft",
+      mentions: [],
+      attachments: [
+        {
+          type: "localFile" as const,
+          path: "notes.txt",
+          name: "notes.txt",
+          sizeBytes: 12,
+        },
+      ],
+    };
+    accessor.setDraft(draft);
+    const save = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new DOMException("Quota exceeded", "QuotaExceededError");
+      });
+    expect(() =>
+      preparePromptDraftSubmission(
+        accessor.storageKey,
+        draft,
+        "unsaved-submission",
+      ),
+    ).toThrow("Quota exceeded");
+    expect(accessor.getCurrent()).toEqual(draft);
+    save.mockRestore();
+  });
+
+  it("keeps an interrupted marked draft until its exact committed handoff is recovered", () => {
+    const accessor = getPromptDraftAccessor(uniqueScope());
+    const draft = { text: "Crash recovery", mentions: [], attachments: [] };
+    accessor.setDraft(draft);
+    preparePromptDraftSubmission(
+      accessor.storageKey,
+      draft,
+      "saved-submission",
+    );
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: accessor.storageKey }),
+    );
+    expect(accessor.getCurrent()).toEqual(draft);
+    expect(
+      completePromptDraftSubmission(
+        accessor.storageKey,
+        draft,
+        "different-submission",
+      ),
+    ).toBe("preserved");
+    const remove = vi
+      .spyOn(Storage.prototype, "removeItem")
+      .mockImplementation(() => {
+        throw new Error("Storage unavailable");
+      });
+    expect(() =>
+      completePromptDraftSubmission(
+        accessor.storageKey,
+        draft,
+        "saved-submission",
+      ),
+    ).toThrow("Storage unavailable");
+    expect(accessor.getCurrent()).toEqual(draft);
+    remove.mockRestore();
+    expect(
+      completePromptDraftSubmission(
+        accessor.storageKey,
+        draft,
+        "saved-submission",
+      ),
+    ).toBe("cleared");
   });
 });

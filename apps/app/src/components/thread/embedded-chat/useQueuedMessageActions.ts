@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { PromptInput, ThreadQueuedMessage } from "@bb/domain";
+import type { PromptInput } from "@bb/domain";
 import type { SendQueuedMessageMode } from "@bb/server-contract";
 import type {
   QueuedMessageGroupBoundaryRequest,
@@ -16,6 +16,11 @@ import { showMutationErrorToast } from "@/lib/mutation-errors";
 import type { QueuedMessageReorderRequest } from "@/lib/queued-message-reorder";
 import { BbHttpError } from "@/lib/sdk";
 import type { InlineQueuedMessageEditState } from "./useInlineQueuedMessageEditing";
+import {
+  isLocalQueuedMessage,
+  type QueuedMessageRow,
+} from "@/lib/queued-message-rows";
+import { deleteSubmission, editSubmission } from "@/lib/message-delivery/store";
 
 type QueuedMessageSendGuard = "current-head" | "exists" | "none";
 
@@ -27,7 +32,7 @@ interface SendQueuedMessageByIdArgs {
 
 interface UseQueuedMessageActionsArgs {
   threadId: string;
-  queuedMessages: readonly ThreadQueuedMessage[];
+  queuedMessages: readonly QueuedMessageRow[];
   sendProcessingPersistence: "clear-on-settle" | "until-left-queue";
   onSendSuccess?: () => void;
   onSaveSuccess?: () => void;
@@ -72,8 +77,12 @@ export function useQueuedMessageActions({
     action: QueuedMessageProcessingAction;
     id: string;
   } | null>(null);
-  const queuedMessagesRef = useRef<readonly ThreadQueuedMessage[]>([]);
+  const queuedMessagesRef = useRef<readonly QueuedMessageRow[]>([]);
   queuedMessagesRef.current = queuedMessages;
+  const [localAction, setLocalAction] = useState<"edit" | "delete" | null>(
+    null,
+  );
+  const localActionPendingRef = useRef(false);
 
   const displayedProcessingQueuedMessage = useMemo(
     () =>
@@ -90,10 +99,10 @@ export function useQueuedMessageActions({
 
   const sendQueuedMessageById = useCallback(
     async ({ guard, messageId, mode }: SendQueuedMessageByIdArgs) => {
-      if (
-        guard !== "none" &&
-        !queuedMessagesRef.current.some((message) => message.id === messageId)
-      ) {
+      const message = queuedMessagesRef.current.find(
+        (row) => row.id === messageId,
+      );
+      if (!message || isLocalQueuedMessage(message)) {
         return;
       }
       if (
@@ -137,29 +146,54 @@ export function useQueuedMessageActions({
     if (
       !inlineEditingQueuedMessage ||
       activeComposerDraftInput.length === 0 ||
-      updateQueuedMessage.isPending
+      updateQueuedMessage.isPending ||
+      localActionPendingRef.current
     ) {
       return;
     }
     if (
       inlineEditingQueuedMessage.ownerThreadId !== threadId ||
-      !queuedMessagesRef.current.some(
-        (message) => message.id === inlineEditingQueuedMessage.queuedMessageId,
-      )
+      (!inlineEditingQueuedMessage.localEditClaim &&
+        !queuedMessagesRef.current.some(
+          (message) =>
+            message.id === inlineEditingQueuedMessage.queuedMessageId,
+        ))
     ) {
       dismissInlineQueuedMessageEditor();
       return;
     }
     const { expectedUpdatedAt, ownerThreadId, queuedMessageId } =
       inlineEditingQueuedMessage;
+    const message = queuedMessagesRef.current.find(
+      (row) => row.id === queuedMessageId,
+    );
+    const local =
+      inlineEditingQueuedMessage.localEditClaim !== undefined ||
+      (message !== undefined && isLocalQueuedMessage(message));
+    if (local && !inlineEditingQueuedMessage.localEditClaim) return;
+    if (!local && (!message || !message.editable)) return;
+    if (local) {
+      localActionPendingRef.current = true;
+      setLocalAction("edit");
+    }
     setProcessingQueuedMessage({ id: queuedMessageId, action: "edit" });
     try {
-      await updateQueuedMessage.mutateAsync({
-        expectedUpdatedAt,
-        id: ownerThreadId,
-        input: activeComposerDraftInput,
-        queuedMessageId,
-      });
+      if (local) {
+        await editSubmission({
+          threadId: ownerThreadId,
+          id: queuedMessageId,
+          expectedUpdatedAt,
+          input: activeComposerDraftInput,
+          editToken: inlineEditingQueuedMessage.localEditClaim?.token,
+        });
+      } else {
+        await updateQueuedMessage.mutateAsync({
+          expectedUpdatedAt,
+          id: ownerThreadId,
+          input: activeComposerDraftInput,
+          queuedMessageId,
+        });
+      }
       onSaveSuccess?.();
       dismissInlineQueuedMessageEditor();
     } catch (error) {
@@ -172,6 +206,10 @@ export function useQueuedMessageActions({
         lifecycleOperation: "update_queued_message",
       });
     } finally {
+      if (local) {
+        localActionPendingRef.current = false;
+        setLocalAction(null);
+      }
       setProcessingQueuedMessage((current) =>
         current?.id === queuedMessageId ? null : current,
       );
@@ -187,12 +225,25 @@ export function useQueuedMessageActions({
 
   const handleDeleteQueuedMessage = useCallback(
     (queuedMessageId: string) => {
+      const message = queuedMessagesRef.current.find(
+        (row) => row.id === queuedMessageId,
+      );
+      if (!message || localActionPendingRef.current) return;
+      const local = isLocalQueuedMessage(message);
+      if (local && !message.editable) return;
+      if (local) {
+        localActionPendingRef.current = true;
+        setLocalAction("delete");
+      }
       setProcessingQueuedMessage({ id: queuedMessageId, action: "delete" });
-      void deleteQueuedMessage
-        .mutateAsync({
-          id: threadId,
-          queuedMessageId,
-        })
+      const deletion = local
+        ? deleteSubmission({
+            threadId,
+            id: queuedMessageId,
+            expectedUpdatedAt: message.updatedAt,
+          })
+        : deleteQueuedMessage.mutateAsync({ id: threadId, queuedMessageId });
+      void deletion
         .catch((error) => {
           showMutationErrorToast({
             error,
@@ -201,6 +252,10 @@ export function useQueuedMessageActions({
           });
         })
         .finally(() => {
+          if (local) {
+            localActionPendingRef.current = false;
+            setLocalAction(null);
+          }
           setProcessingQueuedMessage((current) =>
             current?.id === queuedMessageId ? null : current,
           );
@@ -211,6 +266,20 @@ export function useQueuedMessageActions({
 
   const handleReorderQueuedMessage = useCallback(
     (request: QueuedMessageReorderRequest) => {
+      if (queuedMessagesRef.current.some(isLocalQueuedMessage)) return;
+      const ids = [
+        request.queuedMessageId,
+        request.previousQueuedMessageId,
+        request.nextQueuedMessageId,
+        request.groupBoundaryQueuedMessageId,
+      ].filter((id) => id != null);
+      if (
+        ids.some(
+          (id) =>
+            !queuedMessagesRef.current.some((message) => message.id === id),
+        )
+      )
+        return;
       void reorderQueuedMessage
         .mutateAsync({
           ...request,
@@ -229,6 +298,18 @@ export function useQueuedMessageActions({
 
   const handleSetQueuedMessageGroupBoundary = useCallback(
     (request: QueuedMessageGroupBoundaryRequest) => {
+      if (queuedMessagesRef.current.some(isLocalQueuedMessage)) return;
+      const ids = [
+        request.groupBoundaryQueuedMessageId,
+        ...request.expectedGroupedPrefixQueuedMessageIds,
+      ];
+      if (
+        ids.some(
+          (id) =>
+            !queuedMessagesRef.current.some((message) => message.id === id),
+        )
+      )
+        return;
       void setQueuedMessageGroupBoundary
         .mutateAsync({
           id: threadId,
@@ -246,6 +327,7 @@ export function useQueuedMessageActions({
   );
 
   const queuedMessageActionPending =
+    localAction !== null ||
     deleteQueuedMessage.isPending ||
     reorderQueuedMessage.isPending ||
     setQueuedMessageGroupBoundary.isPending ||
@@ -255,7 +337,8 @@ export function useQueuedMessageActions({
   return {
     processingQueuedMessage: displayedProcessingQueuedMessage,
     queuedMessageActionPending,
-    isUpdateQueuedMessagePending: updateQueuedMessage.isPending,
+    isUpdateQueuedMessagePending:
+      updateQueuedMessage.isPending || localAction === "edit",
     sendQueuedMessageById,
     handleSaveInlineQueuedMessage,
     handleDeleteQueuedMessage,

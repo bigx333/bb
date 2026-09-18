@@ -1,3 +1,4 @@
+import type { ThreadSubmissionReceipt } from "./thread-submission-receipts.js";
 import type {
   PromptInput,
   ResolvedThreadExecutionOptions,
@@ -26,6 +27,7 @@ export interface ReadyThreadEnvironment extends EnvironmentRow {
 }
 
 interface DispatchTurnDuringReprovisionArgs {
+  submission?: ThreadSubmissionReceipt;
   beforeRequestAppendInTransaction?: (args: { tx: DbTransaction }) => void;
   deps: LoggedPendingInteractionWorkSessionDeps;
   environment: EnvironmentRow;
@@ -69,6 +71,7 @@ export async function dispatchTurnDuringReprovision(
     args.environment.status !== "provisioning"
   ) {
     requestThreadTargetReprovision(args.deps, {
+      submission: args.submission,
       beforeRequestAppendInTransaction: ({ tx }) => {
         args.beforeRequestAppendInTransaction?.({ tx });
         const prepared = applyLoggedThreadLifecycleEventInTransaction(

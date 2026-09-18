@@ -1,3 +1,7 @@
+import {
+  acceptThreadSubmission,
+  type ThreadSubmissionReceipt,
+} from "./thread-submission-receipts.js";
 import { getNonDestroyedHostByLaunchKey } from "@bb/db";
 import { sweepProviderMachine } from "../machines/provider-orchestration.js";
 import { cancelProviderEnvironmentCreation } from "../environments/environment-engine.js";
@@ -62,6 +66,7 @@ interface RequestThreadProvisionArgs {
 }
 
 interface RequestThreadTargetReprovisionArgs {
+  submission?: ThreadSubmissionReceipt;
   beforeRequestAppendInTransaction?: (args: { tx: DbTransaction }) => void;
   environment: EnvironmentRow;
   execution: ResolvedThreadExecutionOptions;
@@ -317,42 +322,48 @@ function appendReprovisionTurnRequest(
 ) {
   const requestId = createClientTurnRequestId();
   const request = deps.db.transaction(
-    (tx) => {
-      args.beforeRequestAppendInTransaction?.({ tx });
-      const request =
-        appendPreparedClientTurnRequestedEventWithNotificationInTransaction(
-          tx,
-          {
-            threadId: args.thread.id,
-            environmentId: args.environment.id,
-            type: "client/turn/requested",
-            input: args.input,
-            ...(args.inputGroups !== undefined
-              ? { inputGroups: args.inputGroups }
-              : {}),
-            execution: args.execution,
-            initiator: args.initiator,
-            senderThreadId: args.senderThreadId,
-            systemMessageKind: args.systemMessageKind,
-            systemMessageSubject: args.systemMessageSubject,
-            requestMethod: "turn/start",
-            source: "tell",
-            target: { kind: "new-turn" },
-            requestId,
-          },
-        );
-      recordAcceptedPromptHistoryEntry(
-        { db: tx },
-        {
-          thread: args.thread,
-          input: args.input,
-          initiator: args.initiator,
-          target: { kind: "new-turn" },
-          requestSequence: request.sequence,
+    (tx) =>
+      acceptThreadSubmission(
+        tx,
+        args.submission,
+        () => {
+          args.beforeRequestAppendInTransaction?.({ tx });
+          const request =
+            appendPreparedClientTurnRequestedEventWithNotificationInTransaction(
+              tx,
+              {
+                threadId: args.thread.id,
+                environmentId: args.environment.id,
+                type: "client/turn/requested",
+                input: args.input,
+                ...(args.inputGroups !== undefined
+                  ? { inputGroups: args.inputGroups }
+                  : {}),
+                execution: args.execution,
+                initiator: args.initiator,
+                senderThreadId: args.senderThreadId,
+                systemMessageKind: args.systemMessageKind,
+                systemMessageSubject: args.systemMessageSubject,
+                requestMethod: "turn/start",
+                source: "tell",
+                target: { kind: "new-turn" },
+                requestId,
+              },
+            );
+          recordAcceptedPromptHistoryEntry(
+            { db: tx },
+            {
+              thread: args.thread,
+              input: args.input,
+              initiator: args.initiator,
+              target: { kind: "new-turn" },
+              requestSequence: request.sequence,
+            },
+          );
+          return request;
         },
-      );
-      return request;
-    },
+        (accepted) => ({ delivery: "sent", turnRequestId: accepted.requestId }),
+      ),
     { behavior: "immediate" },
   );
   deps.hub.notifyThread(

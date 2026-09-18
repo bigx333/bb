@@ -296,6 +296,46 @@ describe("@bb/sdk", () => {
     ]);
   });
 
+  it("forwards submission IDs and abort signals without serializing the signal", async () => {
+    const received: Array<{
+      signal: AbortSignal | null | undefined;
+      body: string | undefined;
+    }> = [];
+    const fetch: FetchImplementation = async (_input, init) => {
+      received.push({ signal: init?.signal, body: bodyText(init) });
+      return jsonResponse({ body: { ok: true, delivery: "sent" } });
+    };
+    const sdk = createBbSdk({
+      transport: createHttpTransport({
+        baseUrl: "http://bb.test",
+        fetch,
+        runtime: "node",
+      }),
+    });
+    const signal = new AbortController().signal;
+    const input = [{ type: "text" as const, text: "keep this", mentions: [] }];
+    await sdk.threads.send({
+      threadId: "thr_submission",
+      input,
+      mode: "start",
+      clientSubmissionId: "send_nanoid",
+      signal,
+    });
+    await sdk.threads.queuedMessages.create({
+      threadId: "thr_submission",
+      input,
+      clientSubmissionId: "queue_nanoid",
+      signal,
+    });
+    expect(received.map((request) => request.signal)).toEqual([signal, signal]);
+    expect(received.map((request) => JSON.parse(request.body ?? "{}"))).toEqual(
+      [
+        { input, mode: "start", clientSubmissionId: "send_nanoid" },
+        { input, clientSubmissionId: "queue_nanoid" },
+      ],
+    );
+  });
+
   it("forwards read abort signals to fetch", async () => {
     const controller = new AbortController();
     let receivedSignal: AbortSignal | null | undefined;

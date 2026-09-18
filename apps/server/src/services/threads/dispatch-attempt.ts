@@ -1,3 +1,7 @@
+import {
+  acceptThreadSubmission,
+  type ThreadSubmissionReceipt,
+} from "./thread-submission-receipts.js";
 import { requestQueuedMachineReadiness } from "./queued-message-dispatch.js";
 import {
   cancelPreparingMachinePause,
@@ -216,6 +220,7 @@ export type DispatchAttemptSource =
     };
 
 export interface DispatchAttemptArgs {
+  submission?: ThreadSubmissionReceipt;
   thread: Thread;
   payload: SendMessageRequest & { inputGroups?: PromptInput[][] };
   source: DispatchAttemptSource;
@@ -345,6 +350,7 @@ async function runDispatchAttempt(
   );
   const resolvedPayload = resolveExecutionIntoPayload(payload, execution);
   const queuedMessage: QueuedDispatchMessage = {
+    submission: args.submission,
     input: payload.input,
     execution,
     senderThreadId,
@@ -485,6 +491,7 @@ async function runDispatchAttempt(
 
     if (firstDispatch) {
       admitted.value = await admitPendingThread(deps, {
+        submission: args.submission,
         claimed,
         payload: resolvedPayload,
         respectManualStopPause,
@@ -580,6 +587,7 @@ async function runDispatchAttempt(
   const environment = await requireThreadCommandEnvironment(deps, { thread });
   try {
     await sendThreadMessage(deps, {
+      submission: args.submission,
       environment,
       payload: resolvedPayload,
       thread,
@@ -661,6 +669,7 @@ function consumeClaimedRows(
 }
 
 interface AdmitPendingThreadArgs {
+  submission?: ThreadSubmissionReceipt;
   claimed: ClaimedQueuedThreadMessageRow[] | null;
   payload: SendMessageRequest & { inputGroups?: PromptInput[][] };
   respectManualStopPause: boolean;
@@ -724,41 +733,53 @@ async function admitPendingThread(
   let startingThread: Thread;
   try {
     startingThread = deps.db.transaction(
-      (tx) => {
-        // The row is consumed and the thread flipped in ONE transaction: a
-        // flip that loses to a concurrent attempt rolls the consumption back,
-        // so the row stays claimed for the caller to hand back rather than
-        // being deleted under a message that never dispatched.
-        if (args.claimed !== null && args.claimed.length > 0) {
-          consumeClaimedRows(
-            args.claimed,
-            args.thread.id,
-            args.respectManualStopPause,
-          )({ tx });
-        }
-        const prepared = applyLoggedThreadLifecycleEventInTransaction(
-          { db: tx, logger: deps.logger },
-          { threadId: args.thread.id, event: { type: "run.preparing" } },
-        );
-        if (!prepared.applied) {
-          throw new PendingThreadAdmissionLost();
-        }
-        const starting = getThread(tx, args.thread.id);
-        if (starting === null) throw new PendingThreadAdmissionLost();
-        requestThreadProvision(deps, {
-          thread: starting,
-          environmentIntent: startContext.environmentIntent,
-          execution,
-          fork: startContext.fork,
-          input: args.payload.input,
-          ...(startContext.providerInput === undefined
-            ? {}
-            : { providerInput: startContext.providerInput }),
-          startedOnBehalfOf: startContext.startedOnBehalfOf,
-          titleProvided: startContext.titleProvided,
-        });
-        return starting;
-      },
+      (tx) =>
+        acceptThreadSubmission(
+          tx,
+          args.submission,
+          () => {
+            // The row is consumed and the thread flipped in ONE transaction: a
+            // flip that loses to a concurrent attempt rolls the consumption back,
+            // so the row stays claimed for the caller to hand back rather than
+            // being deleted under a message that never dispatched.
+            if (args.claimed !== null && args.claimed.length > 0) {
+              consumeClaimedRows(
+                args.claimed,
+                args.thread.id,
+                args.respectManualStopPause,
+              )({ tx });
+            }
+            const prepared = applyLoggedThreadLifecycleEventInTransaction(
+              { db: tx, logger: deps.logger },
+              { threadId: args.thread.id, event: { type: "run.preparing" } },
+            );
+            if (!prepared.applied) {
+              throw new PendingThreadAdmissionLost();
+            }
+            const starting = getThread(tx, args.thread.id);
+            if (starting === null) throw new PendingThreadAdmissionLost();
+            const provision = requestThreadProvision(deps, {
+              thread: starting,
+              environmentIntent: startContext.environmentIntent,
+              execution,
+              fork: startContext.fork,
+              input: args.payload.input,
+              ...(startContext.providerInput === undefined
+                ? {}
+                : { providerInput: startContext.providerInput }),
+              startedOnBehalfOf: startContext.startedOnBehalfOf,
+              titleProvided: startContext.titleProvided,
+            });
+            return {
+              starting,
+              turnRequestId: provision.request.clientRequestId,
+            };
+          },
+          (accepted) => ({
+            delivery: "sent",
+            turnRequestId: accepted.turnRequestId,
+          }),
+        ).starting,
       { behavior: "immediate" },
     );
   } catch (error) {

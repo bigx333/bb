@@ -68,6 +68,7 @@ interface ThreadDeleteCommandOptions {
 }
 
 interface ThreadTellCommandOptions {
+  submissionId?: string;
   json?: boolean;
   model?: string;
   permissionMode?: string;
@@ -103,6 +104,7 @@ interface ThreadEditMessageCommandOptions {
 type ThreadTellDeliveryMode = "auto" | "queue" | "steer";
 
 interface PostThreadMessageArgs {
+  clientSubmissionId?: string;
   getUrl: () => string;
   threadId: string;
   message: string;
@@ -426,6 +428,10 @@ export function registerActionsCommands(
   parent
     .command("tell <id> <message>")
     .description("Send a follow-up message to a thread")
+    .option(
+      "--submission-id <id>",
+      "Stable ID for retrying an ordinary follow-up without duplicate admission",
+    )
     .option("--json", "Print machine-readable JSON output")
     .option("--model <model>", "Model ID for this message")
     .option("--service-tier <tier>", "Service tier: fast or default")
@@ -456,10 +462,14 @@ export function registerActionsCommands(
       action(
         async (id: string, message: string, opts: ThreadTellCommandOptions) => {
           const response = await postThreadMessage({
+            clientSubmissionId: opts.submissionId,
             getUrl,
             threadId: id,
             message,
-            mode: resolveThreadMessageMode(opts.mode),
+            mode:
+              opts.submissionId !== undefined && opts.mode === undefined
+                ? "queue"
+                : resolveThreadMessageMode(opts.mode),
             model: opts.model,
             permissionMode: parsePermissionMode(opts.permissionMode),
             reasoningLevel: parseReasoningLevel(opts.reasoningLevel),
@@ -576,6 +586,9 @@ async function postThreadMessage(
     sdk,
   });
   const response = await sdk.threads.send({
+    ...(args.clientSubmissionId === undefined
+      ? {}
+      : { clientSubmissionId: args.clientSubmissionId }),
     threadId: args.threadId,
     input,
     mode:
