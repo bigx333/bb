@@ -23,8 +23,12 @@ import {
 import { sendMessageResponseSchema } from "@bb/server-contract";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { acceptThreadSendRequest } from "../../src/services/threads/thread-send-request.js";
-import { createQueuedMessageForThread } from "../../src/services/threads/queued-messages.js";
+import {
+  createQueuedMessageForThread,
+  sendQueuedMessageNow,
+} from "../../src/services/threads/queued-messages.js";
 import { runQueuedMessageDispatch } from "../../src/services/threads/queued-message-dispatch.js";
+import { listQueuedThreadCommands } from "../helpers/commands.js";
 import { textInput } from "../helpers/prompt-input.js";
 import {
   seedEnvironment,
@@ -33,6 +37,7 @@ import {
   seedThread,
   seedThreadRuntimeState,
   seedEvent,
+  seedTurnStarted,
 } from "../helpers/seed.js";
 import { withTestHarness, type TestAppHarness } from "../helpers/test-app.js";
 
@@ -413,6 +418,47 @@ describe("durable submission acceptance", () => {
       await acceptThreadSendRequest(harness.deps, { thread, payload });
       expect(requestCount(harness, thread.id)).toBe(before);
       expect(listQueuedThreadMessages(harness.db, thread.id)).toHaveLength(1);
+    });
+  });
+
+  it("waits automatically but lets Send now join the active turn for an accepted submission", async () => {
+    await withTestHarness(async (harness) => {
+      const { thread, environment } = fixture(harness, "active");
+      seedTurnStarted(harness.deps, {
+        environmentId: environment.id,
+        providerThreadId: "provider-submission",
+        threadId: thread.id,
+        turnId: "turn-submission",
+      });
+      const before = requestCount(harness, thread.id);
+      const input = textInput("send this accepted follow-up now");
+      const queued = await createQueuedMessageForThread(harness.deps, {
+        thread,
+        payload: { clientSubmissionId, input },
+      });
+      await runQueuedMessageDispatch(harness.deps, {
+        kind: "thread-ready",
+        threadId: thread.id,
+      });
+      expect(requestCount(harness, thread.id)).toBe(before);
+      expect(listQueuedThreadMessages(harness.db, thread.id)).toMatchObject([
+        { id: queued.id, clientSubmissionId },
+      ]);
+
+      await expect(
+        sendQueuedMessageNow(harness.deps, {
+          mode: "auto",
+          queuedMessageId: queued.id,
+          threadId: thread.id,
+        }),
+      ).resolves.toEqual({ delivery: "sent" });
+      expect(listQueuedThreadMessages(harness.db, thread.id)).toEqual([]);
+      expect(requestCount(harness, thread.id)).toBe(before + 1);
+      expect(
+        listQueuedThreadCommands(harness, "turn.submit", thread.id),
+      ).toMatchObject([
+        { input, target: { mode: "auto", expectedTurnId: "turn-submission" } },
+      ]);
     });
   });
 

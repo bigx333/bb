@@ -753,6 +753,7 @@ async function sendClaimedQueuedMessageForThread(
       ),
       ...(inputGroups.length > 1 ? { inputGroups } : {}),
       ...(args.mode === "auto" &&
+      !args.sendNow &&
       queuedMessages.some((entry) => entry.clientSubmissionId !== undefined)
         ? { mode: "queue-if-active" as const }
         : {}),
