@@ -17,7 +17,6 @@ import {
 export interface DeliveryFailure {
   kind: "transient" | "rejected" | "unknown";
   message: string;
-  retryAfterMs?: number;
   resolvesUncertainty?: boolean;
 }
 
@@ -48,12 +47,9 @@ function failureError(error: unknown): Error {
     : new Error("Message delivery could not be completed.");
 }
 
-function retryDelay(entry: Submission, retryAfterMs = 0): number {
+function retryDelay(entry: Submission): number {
   const backoff = Math.min(60_000, 1_000 * 2 ** Math.min(entry.retryCount, 6));
-  return Math.max(
-    retryAfterMs,
-    Math.round(backoff * (0.8 + Math.random() * 0.4)),
-  );
+  return Math.round(backoff * (0.8 + Math.random() * 0.4));
 }
 
 export function startMessageDelivery(
@@ -166,8 +162,7 @@ export function startMessageDelivery(
         });
         options.onError?.(failureError(error));
       } else {
-        const nextAttemptAt =
-          Date.now() + retryDelay(claim.entry, failure.retryAfterMs);
+        const nextAttemptAt = Date.now() + retryDelay(claim.entry);
         await settleSubmission(claim, {
           kind: "retry",
           error: failure.message,

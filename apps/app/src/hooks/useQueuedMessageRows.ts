@@ -1,6 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import type { ThreadQueuedMessage } from "@bb/domain";
-import { useThreadMessageSubmissions } from "@/lib/message-delivery/useThreadMessageSubmissions";
+import {
+  getSubmissions,
+  subscribeSubmissions,
+} from "@/lib/message-delivery/store";
 import { projectQueuedMessageRows } from "@/lib/queued-message-rows";
 import { useServerConnectionState } from "@/hooks/useServerConnectionState";
 
@@ -8,7 +11,11 @@ export function useQueuedMessageRows(
   threadId: string,
   serverMessages: readonly ThreadQueuedMessage[],
 ) {
-  const submissions = useThreadMessageSubmissions(threadId);
+  const entries = useSyncExternalStore(subscribeSubmissions, getSubmissions);
+  const submissions = useMemo(
+    () => entries.filter((entry) => entry.threadId === threadId),
+    [entries, threadId],
+  );
   const connected = useServerConnectionState() === "connected";
   return useMemo(
     () => projectQueuedMessageRows({ serverMessages, submissions, connected }),

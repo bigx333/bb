@@ -11,7 +11,10 @@ import type {
 } from "@bb/server-contract";
 import { useSystemConfig } from "@/hooks/queries/system-queries";
 import { useServerConnectionState } from "@/hooks/useServerConnectionState";
-import { enqueueSubmission } from "@/lib/message-delivery/store";
+import {
+  enqueueSubmission,
+  type SubmissionRequest,
+} from "@/lib/message-delivery/store";
 import { notifyComposerSubmitted } from "@/lib/composer-submissions";
 
 type DurableRequest =
@@ -57,23 +60,21 @@ export function useDurableMessageSubmission(threadId: string) {
       savingRef.current = true;
       setIsSaving(true);
       try {
+        let ordinary: SubmissionRequest;
         if (submission.kind === "send") {
           const mode = submission.request.mode;
           if (mode !== "queue-if-active" && mode !== "start") {
             throw new Error("Steering requires a server connection.");
           }
-          const saved = await enqueueSubmission({
+          ordinary = {
             kind: "send",
             request: { ...submission.request, mode },
-            threadId,
-            draft,
-            awaitAcceptance,
-          });
-          notifyComposerSubmitted({ kind: "thread", threadId });
-          return saved;
+          };
+        } else {
+          ordinary = submission;
         }
         const saved = await enqueueSubmission({
-          ...submission,
+          ...ordinary,
           threadId,
           draft,
           awaitAcceptance,

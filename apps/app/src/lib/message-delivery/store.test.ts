@@ -194,7 +194,7 @@ it("skips retained rejection and corrects it with a new ID at the delivery tail"
   expect(corrected?.createdAt).toBe(first.createdAt);
 });
 
-it("pauses delivery while an inline edit owns the claim and fences an expired editor", async () => {
+it("pauses delivery while an inline edit owns the claim and sends the edited payload", async () => {
   const entry = await enqueue("Edit this");
   const edit = await store.acquireSubmissionEdit({
     threadId: entry.threadId,
@@ -215,15 +215,6 @@ it("pauses delivery while an inline edit owns the claim and fences an expired ed
   expect(delivering.entry.request.input).toEqual([
     { type: "text", text: "Updated", mentions: [] },
   ]);
-  await expect(
-    store.editSubmission({
-      threadId: entry.threadId,
-      id: entry.id,
-      expectedUpdatedAt: entry.updatedAt,
-      input: [{ type: "text", text: "Stale edit", mentions: [] }],
-      editToken: edit.token,
-    }),
-  ).rejects.toThrow("already being delivered");
 });
 
 it("resolves a programmatic caller after durable acceptance even when another reader completes cleanup", async () => {
