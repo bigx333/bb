@@ -71,6 +71,7 @@ const thread: ThreadWithRuntime = {
   sectionId: "section_test",
   status: "pending",
   parentThreadId: "thr_parent",
+  lifecycleOwnerThreadId: null,
   sourceThreadId: null,
   originKind: null,
   originPluginId: null,
