@@ -29,7 +29,6 @@ const GET_NO_SCROLL_ELEMENT = () => null;
 
 interface ScrollSample {
   at: number;
-  fast: boolean;
   offset: number;
 }
 
@@ -71,10 +70,10 @@ export function TimelineWindowedItems({
   const [scrollRootUsable, setScrollRootUsable] = useState(true);
   const [scrollMargin, setScrollMargin] = useState(0);
   const [interactionPins, setInteractionPins] = useState<readonly string[]>([]);
+  const [fastScrolling, setFastScrolling] = useState(false);
   const containerElementRef = useRef<HTMLDivElement>(null);
   const scrollSampleRef = useRef<ScrollSample>({
     at: 0,
-    fast: false,
     offset: 0,
   });
   const windowingEnabled = configured && scrollRootUsable;
@@ -144,7 +143,7 @@ export function TimelineWindowedItems({
     ) => {
       const sample = scrollSampleRef.current;
       if (!scrolling) {
-        sample.fast = false;
+        setFastScrolling(false);
         sample.at = 0;
         sample.offset = instance.scrollOffset ?? sample.offset;
         return;
@@ -154,9 +153,10 @@ export function TimelineWindowedItems({
       const elapsed = sample.at === 0 ? 0 : now - sample.at;
       const distance = Math.abs(offset - sample.offset);
       const viewportSize = instance.scrollRect?.height ?? 0;
-      sample.fast =
+      setFastScrolling(
         (sample.at === 0 || elapsed <= 100) &&
-        distance >= Math.max(200, viewportSize * 0.5);
+          distance >= Math.max(200, viewportSize * 0.5),
+      );
       sample.at = now;
       sample.offset = offset;
     },
@@ -269,7 +269,6 @@ export function TimelineWindowedItems({
     );
   }
 
-  const fastScrolling = scrollSampleRef.current.fast;
   const virtualItemsByIndex = new Map(
     virtualizer.getVirtualItems().map((item) => [item.index, item]),
   );

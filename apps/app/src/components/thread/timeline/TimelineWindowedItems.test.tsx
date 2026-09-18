@@ -35,9 +35,36 @@ function rect(top: number, height: number): DOMRect {
 }
 
 class ResizeObserverStub implements ResizeObserver {
-  disconnect(): void {}
-  observe(): void {}
-  unobserve(): void {}
+  static instances: ResizeObserverStub[] = [];
+  readonly targets = new Set<Element>();
+  readonly callback: ResizeObserverCallback;
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback;
+    ResizeObserverStub.instances.push(this);
+  }
+  disconnect(): void {
+    this.targets.clear();
+  }
+  observe(target: Element): void {
+    this.targets.add(target);
+  }
+  unobserve(target: Element): void {
+    this.targets.delete(target);
+  }
+  trigger(target: Element, height: number): void {
+    this.callback(
+      [
+        {
+          target,
+          contentRect: new DOMRect(0, 0, 320, height),
+          borderBoxSize: [{ blockSize: height, inlineSize: 320 }],
+          contentBoxSize: [{ blockSize: height, inlineSize: 320 }],
+          devicePixelContentBoxSize: [{ blockSize: height, inlineSize: 320 }],
+        },
+      ],
+      this,
+    );
+  }
 }
 
 function renderWindowedItems(options?: {
@@ -90,6 +117,7 @@ function renderWindowedItems(options?: {
 }
 
 beforeEach(() => {
+  ResizeObserverStub.instances = [];
   itemHeights = new Map();
   scrollElement = document.createElement("div");
   document.body.append(scrollElement);
@@ -234,6 +262,33 @@ describe("TimelineWindowedItems", () => {
       vi.advanceTimersByTime(300);
     });
     expect(screen.getByTestId("content-50")).toBeTruthy();
+  });
+
+  it("realizes the viewport around a restored anchor when measurements settle without new data", async () => {
+    vi.useFakeTimers();
+    renderWindowedItems({ alwaysMountedKeys: new Set(["row-50"]) });
+    await act(async () => {});
+
+    scrollElement.scrollTop = 1_600;
+    fireEvent.scroll(scrollElement);
+    await act(async () => {});
+
+    expect(screen.getByTestId("content-50")).toBeTruthy();
+    expect(screen.queryByTestId("content-51")).toBeNull();
+    const anchor = screen.getByTestId("wrapper-50");
+    const observer = ResizeObserverStub.instances.find((candidate) =>
+      candidate.targets.has(anchor),
+    );
+    if (!observer) throw new Error("Expected the anchor to be measured");
+
+    act(() => {
+      itemHeights.set(50, 33);
+      observer.trigger(anchor, 33);
+    });
+
+    expect(screen.getByTestId("content-51")).toBeTruthy();
+    expect(screen.getByTestId("content-52")).toBeTruthy();
+    expect(scrollElement.scrollTop).toBe(1_600);
   });
 
   it("seeds its size model from measurements retained by the thread", async () => {
