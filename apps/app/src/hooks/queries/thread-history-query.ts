@@ -151,7 +151,8 @@ export function useThreadHistory({
   );
   const getGeneration = useCallback(() => {
     const owner = getThreadHistoryGeneration(queryClient, threadId);
-    const fetchStatus = queryClient.getQueryState(queryKey)?.fetchStatus;
+    const fetchStatus =
+      queryClient.getQueryState(queryKey)?.fetchStatus ?? "idle";
     return `${owner.eviction}:${owner.blocked}:${fetchStatus}`;
   }, [queryClient, threadId, queryKey]);
   useSyncExternalStore(subscribe, getGeneration, getGeneration);
