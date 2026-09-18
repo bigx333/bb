@@ -9,13 +9,19 @@ import type {
   QueuedMessagePayload,
   QueuedMessagePayloadKind,
   QueuedMessageWaitingOn,
+  StartedOnBehalfOf,
+  StartedOnBehalfOfInitiator,
   ThreadQueuedMessage,
+  ThreadCreateOrigin,
 } from "@bb/domain";
 import { z } from "zod";
 import { ApiError } from "../../errors.js";
+import { resolveDispatchAuthor } from "./dispatch-author.js";
 
 interface StoredQueuedThreadMessageRow {
   clientSubmissionId?: string | null;
+  origin: ThreadCreateOrigin | null;
+  originPluginId: string | null;
   claimedAt: number | null;
   content: string;
   createdAt: number;
@@ -32,6 +38,8 @@ interface StoredQueuedThreadMessageRow {
   sendAt: number | null;
   serviceTier: string;
   senderThreadId: string | null;
+  requestedByInitiator: StartedOnBehalfOfInitiator | null;
+  requestedByThreadId: string | null;
   systemNotice: string | null;
   threadId: string;
   updatedAt: number;
@@ -92,6 +100,34 @@ export function parseStoredQueuedThreadMessageWaitingOn(
 }
 
 /**
+ * The requester a queued dispatch was written with, so a drained re-attempt
+ * resolves the same author its first attempt did. The two columns are written
+ * together; half a pair would silently demote an agent's dispatch to a user's,
+ * so it fails rather than degrading to null.
+ */
+export function storedQueuedThreadMessageRequestedBy(
+  row: Pick<
+    StoredQueuedThreadMessageRow,
+    "id" | "threadId" | "requestedByInitiator" | "requestedByThreadId"
+  >,
+): StartedOnBehalfOf | null {
+  if (row.requestedByInitiator === null && row.requestedByThreadId === null) {
+    return null;
+  }
+  if (row.requestedByInitiator === null || row.requestedByThreadId === null) {
+    throw new ApiError(
+      500,
+      "internal_error",
+      `Stored queued message ${row.id} for thread ${row.threadId} has half a requester`,
+    );
+  }
+  return {
+    initiator: row.requestedByInitiator,
+    senderThreadId: row.requestedByThreadId,
+  };
+}
+
+/**
  * Assemble the row's retry columns into the payload union. A `retry` row that
  * is missing either column is a write-side bug, not a shape a reader should
  * paper over, so it fails loudly rather than degrading to `inline`.
@@ -124,18 +160,23 @@ function toQueuedMessagePayload(
 export function toThreadQueuedMessage(
   row: StoredQueuedThreadMessageRow,
 ): ThreadQueuedMessage {
+  const author =
+    row.systemNotice !== null
+      ? { initiator: "system" as const, senderThreadId: null }
+      : resolveDispatchAuthor({
+          retrying: row.payloadKind === "retry",
+          senderThreadId: row.senderThreadId,
+          startedOnBehalfOf: storedQueuedThreadMessageRequestedBy(row),
+        });
   return threadQueuedMessageSchema.parse({
     id: row.id,
-    initiator:
-      row.systemNotice !== null
-        ? "system"
-        : row.senderThreadId !== null
-          ? "agent"
-          : "user",
     ...(row.clientSubmissionId == null
       ? {}
       : { clientSubmissionId: row.clientSubmissionId }),
-    senderThreadId: row.senderThreadId,
+    origin: row.origin,
+    originPluginId: row.originPluginId,
+    initiator: author.initiator,
+    senderThreadId: author.senderThreadId,
     threadId: row.threadId,
     content: parseStoredQueuedThreadMessageContent(row),
     model: row.model,

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "6b1ea1e7-d732-48e8-aeff-1aed3e5c4433",
+  "id": "48979c46-bc2b-411d-a6cc-18dfcb7cd457",
   "prevId": "a7db3457-1600-41c5-a249-ea8dffc32375",
   "tables": {
     "app_settings": {
@@ -3481,13 +3481,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "client_submission_id": {
-          "name": "client_submission_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "system_notice": {
           "name": "system_notice",
           "type": "text",
@@ -3511,6 +3504,34 @@
         },
         "sender_thread_id": {
           "name": "sender_thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "origin_plugin_id": {
+          "name": "origin_plugin_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "requested_by_initiator": {
+          "name": "requested_by_initiator",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "requested_by_thread_id": {
+          "name": "requested_by_thread_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -4490,80 +4511,6 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "thread_submission_receipts": {
-      "name": "thread_submission_receipts",
-      "columns": {
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "client_submission_id": {
-          "name": "client_submission_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "operation": {
-          "name": "operation",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "fingerprint": {
-          "name": "fingerprint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "result": {
-          "name": "result",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "thread_submission_receipts_thread_id_threads_id_fk": {
-          "name": "thread_submission_receipts_thread_id_threads_id_fk",
-          "tableFrom": "thread_submission_receipts",
-          "tableTo": "threads",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "thread_submission_receipts_thread_id_client_submission_id_pk": {
-          "columns": [
-            "thread_id",
-            "client_submission_id"
-          ],
-          "name": "thread_submission_receipts_thread_id_client_submission_id_pk"
-        }
-      },
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
