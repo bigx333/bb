@@ -1,5 +1,7 @@
 import {
+  lazy,
   memo,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -134,8 +136,6 @@ import {
 } from "./SidebarHeaderControls";
 import { LifecycleFilterMenu } from "@/components/thread/LifecycleFilterMenu";
 import { sidebarLifecycleFilterAtom } from "./sidebarLifecycleFilter";
-import { DraftRows } from "./DraftRows";
-import { ArchivedRows } from "./ArchivedRows";
 import {
   useAppCommandRunner,
   useAppCommandShortcut,
@@ -148,6 +148,13 @@ import {
 } from "./BuiltInSidebarSection";
 import { ReorderableSidebarSectionOrderList } from "./ReorderableSidebarSectionOrderList";
 import { useSidebarModeSectionOrder } from "./useSidebarModeSectionOrder";
+
+const DraftRows = lazy(() =>
+  import("./DraftRows").then((module) => ({ default: module.DraftRows })),
+);
+const ArchivedRows = lazy(() =>
+  import("./ArchivedRows").then((module) => ({ default: module.ArchivedRows })),
+);
 import { haveSameOrder } from "@/lib/stored-order";
 import {
   resolveThreadTitleDisplayText,
@@ -1711,10 +1718,18 @@ function ProjectListComponent({
           />
         </div>
         {lifecycles.includes("drafts") ? (
-          <DraftRows
-            projects={projects ?? EMPTY_PROJECTS}
-            onNavigate={onProjectSelect}
-          />
+          <Suspense
+            fallback={
+              <p className="px-2 py-1 text-xs text-muted-foreground">
+                Loading drafts…
+              </p>
+            }
+          >
+            <DraftRows
+              projects={projects ?? EMPTY_PROJECTS}
+              onNavigate={onProjectSelect}
+            />
+          </Suspense>
         ) : null}
         {lifecycles.includes("active") ? (
           <ActiveSidebarModeSections
@@ -1811,10 +1826,18 @@ function ProjectListComponent({
           />
         ) : null}
         {lifecycles.includes("archived") ? (
-          <ArchivedRows
-            selectedThreadId={selectedThreadId}
-            onNavigate={onProjectSelect}
-          />
+          <Suspense
+            fallback={
+              <p className="px-2 py-1 text-xs text-muted-foreground">
+                Loading archived threads…
+              </p>
+            }
+          >
+            <ArchivedRows
+              selectedThreadId={selectedThreadId}
+              onNavigate={onProjectSelect}
+            />
+          </Suspense>
         ) : null}
       </ProjectListShell>
       {sectionCreateDialog}
