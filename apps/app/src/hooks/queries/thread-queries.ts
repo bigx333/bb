@@ -905,7 +905,7 @@ interface FetchThreadTimelineArgs {
 
 export const COMPACT_THREAD_TIMELINE_SEGMENT_LIMIT = 8;
 
-export function resolveThreadTimelineSegmentLimit(): number | undefined {
+function resolveThreadTimelineSegmentLimit(): number | undefined {
   return getMediaQuerySnapshot(COMPACT_VIEWPORT_QUERY)
     ? COMPACT_THREAD_TIMELINE_SEGMENT_LIMIT
     : undefined;

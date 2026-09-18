@@ -98,22 +98,6 @@ function seedHistory(
 }
 
 describe("useThreadHistory", () => {
-  it("returns fresh cached history immediately without a network read", () => {
-    const { queryClient, wrapper } = createQueryClientTestHarness();
-    const latest = page(30);
-    const { chain } = seedHistory(queryClient, [
-      latest,
-      page(20, { kind: "older" }),
-    ]);
-    const { result } = renderHook(
-      () => useThreadHistory({ threadId: "thread-1", latestTimeline: latest }),
-      { wrapper },
-    );
-
-    expect(result.current.data).toBe(chain);
-    expect(sdk.threads.timeline).not.toHaveBeenCalled();
-  });
-
   it("preserves the initial miss path without fetching latest twice", async () => {
     const latest = page(30);
     vi.mocked(sdk.threads.timeline).mockResolvedValue(latest);

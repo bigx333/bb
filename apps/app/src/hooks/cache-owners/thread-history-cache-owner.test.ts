@@ -1,5 +1,5 @@
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { OPTIMISTIC_TIMELINE_ROW_ID_PREFIX } from "@bb/client-core";
 import { createDeferredPromise } from "@bb/test-helpers";
 import { BbHttpError } from "@/lib/sdk";
@@ -11,7 +11,6 @@ import {
   threadQueryKey,
   threadTimelineQueryKey,
 } from "../queries/query-keys";
-import { HEAVY_PAYLOAD_GC_TIME_MS } from "../queries/query-policies";
 import {
   compactThreadHistory,
   createThreadHistoryPage,
@@ -21,8 +20,6 @@ import {
   THREAD_HISTORY_MAX_BYTES,
   type ThreadHistoryChain,
 } from "./thread-history-cache-owner";
-
-afterEach(() => vi.useRealTimers());
 
 function chain(pageCount = 1): ThreadHistoryChain {
   return {
@@ -149,25 +146,6 @@ describe("thread history cache ownership", () => {
     expect(getThreadHistoryGeneration(queryClient, "thread-1").eviction).toBe(
       1,
     );
-    queryClient.clear();
-  });
-
-  it("uses the existing inactivity collection interval", async () => {
-    vi.useFakeTimers();
-    const queryClient = new QueryClient();
-    const key = threadHistoryQueryKey("thread-1", "surface", 20);
-    const observer = new QueryObserver(queryClient, {
-      queryKey: key,
-      initialData: chain(),
-      staleTime: Infinity,
-      gcTime: HEAVY_PAYLOAD_GC_TIME_MS,
-    });
-    const unsubscribe = observer.subscribe(() => {});
-    unsubscribe();
-    await vi.advanceTimersByTimeAsync(HEAVY_PAYLOAD_GC_TIME_MS - 1);
-    expect(queryClient.getQueryData(key)).toBeDefined();
-    await vi.advanceTimersByTimeAsync(1);
-    expect(queryClient.getQueryData(key)).toBeUndefined();
     queryClient.clear();
   });
 

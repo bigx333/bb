@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import type { ThreadChangeKind } from "@bb/domain";
+import { makeThreadTimelineResponse } from "@/test/fixtures/thread-responses";
 import {
   createThreadHistoryPage,
   getThreadHistoryGeneration,
@@ -36,26 +37,7 @@ function historyChain(validatedAt: number[] = [1]): ThreadHistoryChain {
     surfaceKey: "default",
     pages: validatedAt.map((timestamp) =>
       createThreadHistoryPage(
-        {
-          rows: [],
-          contextBoundarySeq: null,
-          completedTurnDisplay: "collapse",
-          activePromptMode: null,
-          activeThinking: null,
-          activeWorkflows: [],
-          activeBackgroundCommands: [],
-          pendingTodos: null,
-          goal: null,
-          modelFallback: null,
-          maxSeq: 1,
-          timelinePage: {
-            kind: "latest",
-            segmentLimit: 20,
-            returnedSegmentCount: 0,
-            hasOlderRows: false,
-            olderCursor: null,
-          },
-        },
+        makeThreadTimelineResponse({ maxSeq: 1 }),
         null,
         timestamp,
       ),

@@ -158,10 +158,10 @@ export function applyProjectDeleteResult({
   invalidateProjectDeleteQueries({ queryClient });
 }
 
-export function collectCachedThreadIdsForProject({
+export function removeProjectThreadHistory({
   projectId,
   queryClient,
-}: ApplyProjectDeleteResultArgs): string[] {
+}: ApplyProjectDeleteResultArgs): void {
   const cachedHistoryIds = new Set(
     queryClient
       .getQueryCache()
@@ -189,13 +189,9 @@ export function collectCachedThreadIdsForProject({
   for (const thread of getCachedSidebarNavigationThreads(queryClient)) {
     if (thread.projectId === projectId) ids.add(thread.id);
   }
-  return [...ids].filter((id) => cachedHistoryIds.has(id));
-}
-
-export function removeProjectThreadHistory(
-  args: ApplyProjectDeleteResultArgs,
-): void {
-  for (const threadId of collectCachedThreadIdsForProject(args)) {
-    removeThreadHistory({ queryClient: args.queryClient, threadId });
+  for (const threadId of ids) {
+    if (cachedHistoryIds.has(threadId)) {
+      removeThreadHistory({ queryClient, threadId });
+    }
   }
 }

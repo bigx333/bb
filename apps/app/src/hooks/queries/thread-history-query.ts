@@ -16,7 +16,6 @@ import {
 import { BbHttpError, sdk } from "@/lib/sdk";
 import {
   compactThreadHistory,
-  cancelThreadHistoryRead,
   createThreadHistoryPage,
   getThreadHistoryGeneration,
   pruneThreadHistory,
@@ -85,10 +84,6 @@ function isAccessFailure(error: unknown): error is BbHttpError {
     error instanceof BbHttpError &&
     (error.status === 401 || error.status === 403 || error.status === 404)
   );
-}
-
-function oldestSequence(chain: ThreadHistoryChain): number | undefined {
-  return chain.pages.at(-1)?.response.rows[0]?.sourceSeqStart;
 }
 
 interface UseThreadHistoryArgs {
@@ -245,7 +240,8 @@ export function useThreadHistory({
         }
         const retained = current && compactThreadHistory(current);
         const targetPages = retained?.pages.length ?? 1;
-        const targetSequence = retained && oldestSequence(retained);
+        const targetSequence =
+          retained?.pages.at(-1)?.response.rows[0]?.sourceSeqStart;
         const pages = [
           createThreadHistoryPage(
             latest,
@@ -334,48 +330,30 @@ export function useThreadHistory({
         }
         return await rebuild();
       } catch (error) {
-        if (isAccessFailure(error)) {
-          removeThreadHistory({ queryClient, threadId, error });
-          finishForeground(undefined);
-          throw error;
-        }
-        if (signal.aborted || owner.request !== requestGeneration) {
-          if (owner.request !== requestGeneration) finishForeground(undefined);
-          throw new CancelledError({ revert: true });
-        }
-        if (!isStaleCursor(error)) {
-          if (foreground) {
-            foreground.outcome = { status: "error", error };
-          }
-          throw error;
-        }
         try {
+          if (!isStaleCursor(error)) throw error;
           const rebuilt = await rebuild();
           finishForeground(undefined);
           return rebuilt;
-        } catch (recoveryError) {
-          if (isAccessFailure(recoveryError)) {
-            removeThreadHistory({
-              queryClient,
-              threadId,
-              error: recoveryError,
-            });
+        } catch (readError) {
+          if (isAccessFailure(readError)) {
+            removeThreadHistory({ queryClient, threadId, error: readError });
             finishForeground(undefined);
-            throw recoveryError;
+            throw readError;
           }
           if (
             signal.aborted ||
             owner.request !== requestGeneration ||
-            recoveryError instanceof CancelledError
+            readError instanceof CancelledError
           ) {
             if (owner.request !== requestGeneration)
               finishForeground(undefined);
             throw new CancelledError({ revert: true });
           }
           if (foreground) {
-            foreground.outcome = { status: "error", error: recoveryError };
+            foreground.outcome = { status: "error", error: readError };
           }
-          throw recoveryError;
+          throw readError;
         }
       } finally {
         pruneThreadHistory(queryClient);
@@ -429,7 +407,7 @@ export function useThreadHistory({
         queryClient.getQueryState(queryKey)?.fetchStatus === "fetching";
       state.foreground = foreground;
       void (async () => {
-        await cancelThreadHistoryRead({ queryClient, queryKey });
+        await queryClient.cancelQueries({ queryKey, exact: true });
         if (owner.request !== foreground.generation) {
           if (state.foreground === foreground) state.foreground = undefined;
           foreground.resolve(undefined);
