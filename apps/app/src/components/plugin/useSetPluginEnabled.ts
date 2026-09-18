@@ -43,7 +43,7 @@ export function useSetPluginEnabled() {
             listPanes(next.root).length === 1
               ? replacePaneContent(next, pane.paneId, {
                   kind: "new-thread",
-                  draftId: createNewThreadDraft(),
+                  draftId: createNewThreadDraft({}),
                 })
               : removePane(next, pane.paneId);
         }

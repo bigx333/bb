@@ -58,7 +58,7 @@ export function BuiltInSidebarNavigation({
       disabled: onNewChat === undefined,
       splitContent: () => ({
         kind: "new-thread",
-        draftId: createNewThreadDraft(),
+        draftId: createNewThreadDraft({}),
       }),
       onActivate: (event: SidebarNavActivationModifiers) => {
         if (newThreadSplit && (event.metaKey || event.ctrlKey)) {

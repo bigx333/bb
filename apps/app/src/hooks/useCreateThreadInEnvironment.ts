@@ -18,7 +18,7 @@ export function useCreateThreadInEnvironment({
     openNewDraft(
       { projectId },
       {
-        state: { reuseEnvironmentId: environmentId },
+        state: { focusPrompt: true, reuseEnvironmentId: environmentId },
       },
     );
   }, [environmentId, openNewDraft, projectId, setRootComposeProjectId]);

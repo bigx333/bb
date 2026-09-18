@@ -16,6 +16,11 @@ vi.mock("@/components/ui/app-route-anchor", () => ({
 
 vi.mock("@/lib/root-compose-selection", () => ({
   useSetRootComposeProjectId: () => vi.fn(),
+  useRootComposeProjectId: () => ["proj_personal", vi.fn()],
+}));
+
+vi.mock("@/lib/drafts/resource-runtime", () => ({
+  createNewThreadDraft: () => "drf_environment_fixture",
 }));
 
 describe("useCreateThreadInEnvironment", () => {
@@ -30,6 +35,7 @@ describe("useCreateThreadInEnvironment", () => {
 
     result.current();
 
+    expect(navigate.mock.calls[0][0]).toBe("/?draft=drf_environment_fixture");
     const state = navigate.mock.calls[0][1].state;
     expect(shouldStartComposingFromLocationState(state)).toBe(true);
     expect(hasSingleUseRootComposeTargetState(state)).toBe(true);
