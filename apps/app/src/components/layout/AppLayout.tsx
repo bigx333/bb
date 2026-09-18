@@ -1,6 +1,13 @@
-import { LegacyDraftImport } from "@/components/drafts/LegacyDraftImport";
 import { type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { flushSync } from "react-dom";
 import { atom, useAtom, useAtomValue, useStore } from "jotai";
 import { atomWithStorage } from "jotai/utils";
@@ -123,6 +130,12 @@ import {
   useSetRootComposeProjectId,
 } from "@/lib/root-compose-selection";
 import { BackToAppCommandHandler } from "./BackToAppCommandHandler";
+
+const LegacyDraftImport = lazy(() =>
+  import("@/components/drafts/LegacyDraftImport").then((module) => ({
+    default: module.LegacyDraftImport,
+  })),
+);
 
 const SIDEBAR_WIDTH_KEY = "bb.sidebar.width";
 const SIDEBAR_OPEN_KEY = "bb.sidebar.open";
@@ -777,7 +790,9 @@ export function AppLayout({ children }: AppLayoutProps) {
   return (
     <TooltipProvider delayDuration={300} disableHoverableContent>
       <ProjectActionsProvider>
-        <LegacyDraftImport />
+        <Suspense fallback={null}>
+          <LegacyDraftImport />
+        </Suspense>
         <ThreadTitleMentionResourcesProvider {...titleMentionResources}>
           <ThreadActionsProvider>
             <SidebarStateBridge>
