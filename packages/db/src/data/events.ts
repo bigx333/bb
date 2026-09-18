@@ -1202,6 +1202,7 @@ export interface FindStoredEventRowArgs {
 }
 
 export interface ListStoredEventRowsByParentToolCallIdsArgs {
+  excludedEventIds?: readonly string[];
   includeCommandOutput?: boolean;
   excludeDiagnosticEvents?: boolean;
   beforeSequence?: number;
@@ -1749,6 +1750,10 @@ function storedEventRowsByParentToolCallIdsConditions(
   }
   if (args.beforeSequence !== undefined) {
     conditions.push(lt(events.sequence, args.beforeSequence));
+  }
+
+  if (args.excludedEventIds?.length) {
+    conditions.push(sql`${events.id} NOT IN (SELECT value FROM json_each(${JSON.stringify(args.excludedEventIds)}))`);
   }
 
   return conditions;
@@ -3199,13 +3204,20 @@ export function hasTimelineTurnEventsInWindow(
 
 export function listTimelineWindowItemIds(
   db: DbConnection,
-  args: ListStoredTimelineWindowEventRowsArgs,
+  args: ListStoredTimelineWindowEventRowsArgs & { turnIds: readonly string[] },
 ): string[] {
   return db
     .selectDistinct({ itemId: sql<string>`${events.itemId}` })
     .from(events)
     .where(
-      and(...storedTimelineWindowConditions(args), isNotNull(events.itemId)),
+      and(
+        ...storedTimelineWindowConditions(args),
+        or(
+          inArray(events.turnId, [...args.turnIds]),
+          isNotNull(events.parentToolCallId),
+        ),
+        isNotNull(events.itemId),
+      ),
     )
     .all()
     .map((row) => row.itemId);
@@ -3215,8 +3227,10 @@ export function listStoredTimelineTurnEventRows(
   db: DbConnection,
   args: ListStoredTimelineWindowEventRowsArgs & {
     turnIds: readonly string[];
+    excludedEventIds?: readonly string[];
     includeCommandOutput?: boolean;
     itemContext?: {
+      turnIds: readonly string[];
       itemIds: readonly string[];
       sequenceStart: number;
       beforeSequence: number;
@@ -3229,36 +3243,55 @@ export function listStoredTimelineTurnEventRows(
     variableCountPerValue: 1,
     dedupeKey: (turnId) => turnId,
     fixedVariableCount: 32,
-    queryBatch: (turnIds) =>
-      db
+    queryBatch: (turnIds) => {
+      const query = db
         .select(
-          storedEventRowSqlFields(args.maxInlineOutputChars, args.includeCommandOutput),
+          Object.fromEntries(
+            Object.entries(
+              storedEventRowSqlFields(
+                args.maxInlineOutputChars,
+                args.includeCommandOutput,
+              ),
+            ).map(([name, field]) => [name, field.as(name)]),
+          ),
         )
         .from(
           sql`${events} INDEXED BY events_thread_turn_type_item_sequence_idx`,
         )
         .where(
           and(
-            ...storedTimelineWindowConditions(args),
-            inArray(events.turnId, [...turnIds]),
             args.itemContext === undefined
               ? undefined
               : or(
-                  and(
-                    gte(events.sequence, args.itemContext.sequenceStart),
-                    lt(events.sequence, args.itemContext.beforeSequence),
-                  ),
                   sql`${events.type} NOT LIKE 'item/%'`,
-                  inArray(events.itemKind, [
-                    "agentMessage",
-                    "contextCompaction",
-                  ]),
-                  eq(events.type, "item/agentMessage/delta"),
                   sql`${events.itemId} IN (SELECT value FROM json_each(${JSON.stringify(args.itemContext.itemIds)}))`,
+                  and(
+                    inArray(events.turnId, [...args.itemContext.turnIds]),
+                    or(
+                      and(
+                        gte(events.sequence, args.itemContext.sequenceStart),
+                        lt(events.sequence, args.itemContext.beforeSequence),
+                      ),
+                      inArray(events.itemKind, [
+                        "agentMessage",
+                        "contextCompaction",
+                      ]),
+                      eq(events.type, "item/agentMessage/delta"),
+                    ),
+                  ),
                 ),
+            ...storedTimelineWindowConditions(args),
+            inArray(events.turnId, [...turnIds]),
+            args.excludedEventIds?.length
+              ? sql`${events.id} NOT IN (SELECT value FROM json_each(${JSON.stringify(args.excludedEventIds)}))`
+              : undefined,
           ),
         )
-        .all(),
+        .toSQL();
+      return db.$client
+        .prepare<unknown[], StoredEventRow>(query.sql)
+        .all(...query.params);
+    },
   }).sort((left, right) => left.sequence - right.sequence);
 }
 

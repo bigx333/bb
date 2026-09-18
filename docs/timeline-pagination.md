@@ -130,15 +130,19 @@ intents are parsed when a command row is rendered, not for hidden summary childr
 Other event payloads and nested delegation structure are still processed upfront.
 
 Pages and summary expansion use the same conversation-context loader. Expansion
-first selects item identities from metadata in the requested interval, then loads
-their event histories within the snapshot. This preserves updates to items that
+first selects item identities from metadata in the requested interval, restricted to
+the requested turn and parented child events, then loads their event histories within
+the snapshot. This preserves updates to items that
 started outside the interval without loading unrelated command, reasoning, and
-file-change payloads from the same turn. Turn and request state, assistant messages,
-and compaction lifecycle events remain context: they affect grouping or represent
-state shared across the turn. Parent and child context is still resolved by the
-same loader. The requested interval limits detail selection, not those dependencies.
-Expansion matches the requested turn and exact summary bounds, including nested
-summaries.
+file-change payloads from the same turn. Assistant messages and compaction lifecycle
+events remain context within the requested turn. Other turns contribute turn and
+request state; their item payloads are loaded only for selected item IDs or parented
+descendants of the selected work. Selected item histories span turns so a later
+completion still updates the command that originally started it. Parent and child context is resolved by the same loader,
+with already-loaded event IDs excluded from subsequent turn and child reads. The requested interval limits detail selection, not those dependencies.
+Expansion resolves only referenced request IDs, skips page-ordering boundary work,
+and reuses the event-decode cache. It matches the requested turn and exact summary
+bounds, including nested summaries.
 The existing row-output expansion use of the endpoint selects rows owned by its
 requested range when the range does not identify a summary; this also handles a
 command finishing between preview and expansion.

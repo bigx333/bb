@@ -69,6 +69,19 @@ function fixture(splitTurn = false) {
   });
   if (splitTurn) {
     add("turn/started", {}, null, null, "overlap");
+    add(
+      "item/completed",
+      {
+        item: {
+          type: "agentMessage",
+          id: "unrelated-answer",
+          text: "Other task",
+        },
+      },
+      "unrelated-answer",
+      "agentMessage",
+      "overlap",
+    );
     for (let index = 0; index < 100; index++) {
       const id = `overlap-${index}`;
       add(
@@ -207,7 +220,9 @@ describe("timeline command output selection", () => {
         beforeSequence: 1000,
         maxInlineOutputChars: null,
         itemContext: {
+          turnIds: [summary.turnId],
           itemIds: listTimelineWindowItemIds(db, {
+            turnIds: [summary.turnId],
             threadId: thread.id,
             sequenceStart: summary.sourceSeqStart,
             beforeSequence: summary.sourceSeqEnd + 1,
@@ -221,17 +236,17 @@ describe("timeline command output selection", () => {
         context
           .filter((row) => row.itemKind === "commandExecution")
           .map((row) => row.itemId),
-      ).toEqual([
-        "overlap-0",
-        "command-0",
-        "selected",
-        "overlap-0",
-        "selected-tail",
-      ]);
+      ).toEqual(["command-0", "selected", "selected-tail"]);
       expect(
         context.filter((row) => row.itemKind === "contextCompaction"),
       ).toHaveLength(2);
-      expect(context.some((row) => row.type === "turn/completed")).toBe(true);
+      expect(
+        context
+          .filter(
+            (row) => row.turnId === "overlap" && !row.type.startsWith("item/"),
+          )
+          .map((row) => row.type),
+      ).toEqual(["turn/started", "turn/completed"]);
       expect(
         context.filter((row) => row.itemKind === "agentMessage"),
       ).toHaveLength(3);

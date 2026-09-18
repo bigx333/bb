@@ -492,6 +492,13 @@ function ensureTimelineWindowParentedRows(
 
     const childSequenceBounds = args.sequenceBounds;
     const childRows = listStoredEventRowsByParentToolCallIds(db, {
+      excludedEventIds: rows
+        .filter(
+          (row) =>
+            row.parentToolCallId !== null &&
+            toolCallIdsToFetch.includes(row.parentToolCallId),
+        )
+        .map((row) => row.id),
       beforeSequence: childSequenceBounds?.beforeSequence,
       excludedTypes: THREAD_TIMELINE_EXCLUDED_EVENT_TYPES,
       excludeDiagnosticEvents: args.excludeDiagnosticEvents,
@@ -820,25 +827,51 @@ function loadTimelineContextRows(
     excludedTypes: THREAD_TIMELINE_EXCLUDED_EVENT_TYPES,
     maxInlineOutputChars,
   };
-  const groupingContext = measureThreadTimelineStage(
-    profile,
-    "ordering-context-query",
-    () =>
-      getTimelineGroupingContext(db, {
-        threadId: thread.id,
-        sequenceStart: epochSequenceStart,
-        maxSeq,
-      }),
-  );
+  const groupingContext =
+    requestedTurnIds.length === 0
+      ? measureThreadTimelineStage(profile, "ordering-context-query", () =>
+          getTimelineGroupingContext(db, {
+            threadId: thread.id,
+            sequenceStart: epochSequenceStart,
+            maxSeq,
+          }),
+        )
+      : null;
   let rows = listStoredTimelineThreadWindowEventRows(db, windowArgs);
   const itemContext =
     requestedTurnIds.length === 0
       ? undefined
       : {
-          itemIds: listTimelineWindowItemIds(db, windowArgs),
+          turnIds: requestedTurnIds,
+          itemIds: listTimelineWindowItemIds(db, {
+            ...windowArgs,
+            turnIds: requestedTurnIds,
+          }),
           sequenceStart,
           beforeSequence,
         };
+  const acceptedTurnIds =
+    groupingContext?.acceptedTurnIds ??
+    new Map(
+      listStoredTurnInputAcceptedRowsByClientRequestIds(db, {
+        threadId: thread.id,
+        afterSequence: epochSequenceStart - 1,
+        clientRequestIds: rows.flatMap((row) => {
+          if (row.type !== "client/turn/requested") return [];
+          const requestId = tryReadClientTurnRequestedRequestId(row, decode);
+          return requestId === null ? [] : [requestId];
+        }),
+      }).flatMap((row) =>
+        row.turnId === null || row.sequence > maxSeq
+          ? []
+          : [
+              [
+                parseAcceptedInputClientRequestId(row, decode),
+                row.turnId,
+              ] as const,
+            ],
+      ),
+    );
   const initialTurnIds = [
     ...requestedTurnIds,
     ...listTimelineRootWindowTurnIds(db, windowArgs),
@@ -846,9 +879,7 @@ function loadTimelineContextRows(
       if (row.type !== "client/turn/requested") return [];
       const requestId = tryReadClientTurnRequestedRequestId(row, decode);
       const turnId =
-        requestId === null
-          ? undefined
-          : groupingContext.acceptedTurnIds.get(requestId);
+        requestId === null ? undefined : acceptedTurnIds.get(requestId);
       return turnId === undefined ? [] : [turnId];
     }),
   ];
@@ -873,6 +904,7 @@ function loadTimelineContextRows(
           sequenceStart: epochSequenceStart,
           beforeSequence: maxSeq + 1,
           turnIds,
+          excludedEventIds: selectedRows.map((row) => row.id),
           itemContext,
         }),
       ]);
@@ -999,7 +1031,7 @@ function loadTimelineContextRows(
         .filter((row) => !visibleSequences.has(row.sequence))
         .map((row) => row.sequence),
     ),
-    orderingBoundarySequence: groupingContext.orderingBoundarySequence,
+    orderingBoundarySequence: groupingContext?.orderingBoundarySequence ?? null,
     rows: ensureTimelineWindowTurnStartedRows(db, {
       threadId: thread.id,
       rows: mergeStoredEventRowsById([
@@ -1742,7 +1774,7 @@ function buildTimelineTurnSummaryDetailsPage(
         row.sequence <= snapshot.maxSeq &&
         (row.type !== "turn/input/accepted" || startedTurnIds.has(row.turnId)),
     )
-    .map((row) => toThreadEventWithMeta(row));
+    .map((row) => withRowMeta(row, decodeStoredEventRowCached(db, row)));
   const children = buildThreadTimelineTurnDetailsFromEvents({
     events: compactThreadTimelineSummaryEvents(projectionEvents),
     options: {

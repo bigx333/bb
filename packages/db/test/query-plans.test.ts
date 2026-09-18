@@ -463,6 +463,7 @@ describe("slow query index plans", () => {
     try {
       const queries = captureStatements(db, () => {
         listTimelineWindowItemIds(db, {
+          turnIds: ["selected-turn"],
           threadId: thread.id,
           sequenceStart: 100,
           beforeSequence: 200,
@@ -475,6 +476,7 @@ describe("slow query index plans", () => {
           beforeSequence: 1000,
           maxInlineOutputChars: null,
           itemContext: {
+            turnIds: ["selected-turn"],
             itemIds: ["selected-item"],
             sequenceStart: 100,
             beforeSequence: 200,
@@ -710,29 +712,36 @@ describe("slow query index plans", () => {
     db.$client.close();
   });
 
-  it("loads parented timeline rows through the normalized parent index", () => {
-    const { db, thread } = setup();
+  it.each([
+    { excludedEventIds: [] },
+    { excludedEventIds: ["already-loaded-event"] },
+  ])(
+    "loads parented timeline rows through the normalized parent index with exclusions %j",
+    ({ excludedEventIds }) => {
+      const { db, thread } = setup();
 
-    const [query] = captureStatements(db, () => {
+      const [query] = captureStatements(db, () => {
+        expect(
+          listStoredEventRowsByParentToolCallIds(db, {
+            maxInlineOutputChars: null,
+            parentToolCallIds: ["parent-tool-call"],
+            excludedEventIds,
+            threadId: thread.id,
+          }),
+        ).toEqual([]);
+      });
+      if (!query) {
+        throw new Error("Expected the parented timeline row lookup SQL");
+      }
       expect(
-        listStoredEventRowsByParentToolCallIds(db, {
-          maxInlineOutputChars: null,
-          parentToolCallIds: ["parent-tool-call"],
-          threadId: thread.id,
-        }),
-      ).toEqual([]);
-    });
-    if (!query) {
-      throw new Error("Expected the parented timeline row lookup SQL");
-    }
-    expect(
-      queryPlanDetails({ db, params: query.params, sql: query.sql }),
-    ).toMatch(
-      /SEARCH events USING INDEX events_parent_tool_call_thread_parent_sequence_idx/u,
-    );
+        queryPlanDetails({ db, params: query.params, sql: query.sql }),
+      ).toMatch(
+        /SEARCH events USING INDEX events_parent_tool_call_thread_parent_sequence_idx/u,
+      );
 
-    db.$client.close();
-  });
+      db.$client.close();
+    },
+  );
 
   it("scans background-task history once without a completed-set join", () => {
     const { db, thread } = setup();
