@@ -1,4 +1,4 @@
-import type { QueryClient } from "@tanstack/react-query";
+import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { isOptimisticTimelineRowId } from "@bb/client-core";
 import { BbHttpError } from "@/lib/sdk";
 import type {
@@ -177,6 +177,16 @@ export async function invalidateThreadHistory(
   const filters = { queryKey: threadHistoryQueryKeyPrefix(args.threadId) };
   await args.queryClient.cancelQueries(filters);
   await args.queryClient.invalidateQueries(filters, { cancelRefetch: false });
+}
+
+export function cancelThreadHistoryRead({
+  queryClient,
+  queryKey,
+}: {
+  queryClient: QueryClient;
+  queryKey: QueryKey;
+}): Promise<void> {
+  return queryClient.cancelQueries({ queryKey, exact: true });
 }
 
 export function removeThreadHistory(args: ThreadHistoryOwnerArgs): void {

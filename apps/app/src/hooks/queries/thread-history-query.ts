@@ -16,6 +16,7 @@ import {
 import { BbHttpError, sdk } from "@/lib/sdk";
 import {
   compactThreadHistory,
+  cancelThreadHistoryRead,
   createThreadHistoryPage,
   getThreadHistoryGeneration,
   pruneThreadHistory,
@@ -407,7 +408,7 @@ export function useThreadHistory({
         queryClient.getQueryState(queryKey)?.fetchStatus === "fetching";
       state.foreground = foreground;
       void (async () => {
-        await queryClient.cancelQueries({ queryKey, exact: true });
+        await cancelThreadHistoryRead({ queryClient, queryKey });
         if (owner.request !== foreground.generation) {
           if (state.foreground === foreground) state.foreground = undefined;
           foreground.resolve(undefined);
