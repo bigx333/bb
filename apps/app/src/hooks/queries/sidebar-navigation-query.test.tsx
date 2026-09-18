@@ -14,7 +14,11 @@ import {
 } from "@/lib/sidebar-bootstrap-cache";
 import { makeThreadListEntry } from "@bb/test-helpers/domain-fixtures";
 import { createQueryClientTestHarness } from "@/test/queryClientTestHarness";
-import { useSidebarNavigation } from "./sidebar-navigation-query";
+import {
+  useProjectDisplayName,
+  useSidebarNavigation,
+} from "./sidebar-navigation-query";
+import { sidebarNavigationQueryKey } from "./query-keys";
 import {
   makeProjectWithThreadsResponse,
   makeSidebarBootstrapResponse,
@@ -68,6 +72,91 @@ afterEach(() => {
 });
 
 describe("useSidebarNavigation", () => {
+  it("shares persisted page data and replaces it after a background refresh", async () => {
+    window.localStorage.setItem(
+      SIDEBAR_BOOTSTRAP_CACHE_KEY,
+      JSON.stringify(BOOTSTRAP),
+    );
+    let complete!: (value: SidebarBootstrapResponse) => void;
+    vi.mocked(request).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    const { queryClient, wrapper } = createQueryClientTestHarness();
+    const { result } = renderHook(
+      () => ({
+        navigation: useSidebarNavigation(),
+        name: useProjectDisplayName("proj_felt"),
+      }),
+      { wrapper },
+    );
+    expect(result.current.navigation.data).toEqual(BOOTSTRAP);
+    expect(result.current.name).toBe("Felt walk");
+    expect(result.current.navigation.isFetching).toBe(true);
+    expect(request).toHaveBeenCalledTimes(1);
+    const updated = {
+      ...BOOTSTRAP,
+      projects: [{ ...BOOTSTRAP.projects[0]!, name: "Refreshed project" }],
+    };
+    await act(async () => {
+      complete(updated);
+    });
+    await waitFor(() => expect(result.current.name).toBe("Refreshed project"));
+    expect(queryClient.getQueryData(sidebarNavigationQueryKey())).toEqual(
+      updated,
+    );
+  });
+
+  it("keeps persisted content after refresh failure and recovers on retry", async () => {
+    window.localStorage.setItem(
+      SIDEBAR_BOOTSTRAP_CACHE_KEY,
+      JSON.stringify(BOOTSTRAP),
+    );
+    vi.mocked(request).mockRejectedValue(new Error("refresh failed"));
+    const { wrapper } = createQueryClientTestHarness();
+    const { result } = renderHook(() => useSidebarNavigation(), { wrapper });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.data).toEqual(BOOTSTRAP);
+    expect(result.current.isLoadingError).toBe(false);
+    vi.mocked(request).mockResolvedValue(BOOTSTRAP);
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(result.current.isError).toBe(false);
+    expect(result.current.data).toEqual(BOOTSTRAP);
+  });
+
+  it("prefers newer query data to persistence and honors invalidation", async () => {
+    window.localStorage.setItem(
+      SIDEBAR_BOOTSTRAP_CACHE_KEY,
+      JSON.stringify(BOOTSTRAP),
+    );
+    const current = { ...BOOTSTRAP, projects: [] };
+    const { queryClient, wrapper } = createQueryClientTestHarness();
+    queryClient.setQueryData(sidebarNavigationQueryKey(), current);
+    vi.mocked(request).mockResolvedValue(BOOTSTRAP);
+    const { result } = renderHook(() => useSidebarNavigation(), { wrapper });
+    expect(result.current.data).toEqual(current);
+    expect(request).not.toHaveBeenCalled();
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: sidebarNavigationQueryKey(),
+      });
+    });
+    await waitFor(() => expect(result.current.data).toEqual(BOOTSTRAP));
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves errors on a cache miss", async () => {
+    vi.mocked(request).mockRejectedValue(new Error("load failed"));
+    const { wrapper } = createQueryClientTestHarness();
+    const { result } = renderHook(() => useSidebarNavigation(), { wrapper });
+    await waitFor(() => expect(result.current.isLoadingError).toBe(true));
+    expect(result.current.data).toBeUndefined();
+  });
+
   it("replays the last bootstrap while the live one loads", async () => {
     sidebarBootstrapResponseSchema.parse(BOOTSTRAP);
 
@@ -84,7 +173,7 @@ describe("useSidebarNavigation", () => {
     const { result } = renderHook(() => useSidebarNavigation(), {
       wrapper: reloadHarness.wrapper,
     });
-    expect(result.current.isPlaceholderData).toBe(true);
+    expect(result.current.isPlaceholderData).toBe(false);
     expect(result.current.data?.projects[0]?.name).toBe("Felt walk");
     await waitFor(() => expect(request).toHaveBeenCalled());
   });
@@ -145,7 +234,7 @@ describe("useSidebarNavigation", () => {
       const { result } = renderHook(() => useSidebarNavigation(), {
         wrapper: reloadHarness.wrapper,
       });
-      expect(result.current.isPlaceholderData).toBe(true);
+      expect(result.current.isPlaceholderData).toBe(false);
       expect(result.current.data?.projects[0]?.threads).toHaveLength(
         MAX_CACHED_SIDEBAR_THREADS_PER_PROJECT,
       );

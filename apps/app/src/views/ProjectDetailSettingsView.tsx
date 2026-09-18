@@ -292,7 +292,11 @@ export function ProjectDetailSettingsView() {
     [localSourcePicker, pickerHostId, project],
   );
 
-  if (sidebarNavigationQuery.isError || hostsQuery.isError) {
+  if (
+    (sidebarNavigationQuery.isError &&
+      sidebarNavigationQuery.data === undefined) ||
+    (hostsQuery.isError && hostsQuery.data === undefined)
+  ) {
     return (
       <LoadingShell>
         <p className="text-sm text-destructive" role="alert">
