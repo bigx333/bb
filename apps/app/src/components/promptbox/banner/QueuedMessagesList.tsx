@@ -1781,10 +1781,14 @@ export function QueuedMessagesList({
         <QueuedMessageRow
           key={queuedMessage.id}
           queuedMessage={queuedMessage}
-          senderLabel={queuedMessageSenderLabel(
-            queuedMessage,
-            senderThreadMetadataById,
-          )}
+          senderLabel={
+            isLocalQueuedMessage(queuedMessage)
+              ? null
+              : queuedMessageSenderLabel(
+                  queuedMessage,
+                  senderThreadMetadataById,
+                )
+          }
           resolveMentionLink={resolveMentionLink}
           index={messageIndex}
           isProcessing={processingMessageId === queuedMessage.id}
