@@ -1880,7 +1880,7 @@ export function PromptBoxInternal({
   useLayoutEffect(() => {
     if (!editor || editor.isDestroyed) return;
     const editable = !composerInputLocked && !showVoiceActionGroup;
-    if (editor.isEditable !== editable) editor.setEditable(editable);
+    if (editor.isEditable !== editable) editor.setEditable(editable, false);
     editor.view.dom.tabIndex = editable ? 0 : -1;
     if (editable) {
       editor.view.dom.removeAttribute("aria-readonly");

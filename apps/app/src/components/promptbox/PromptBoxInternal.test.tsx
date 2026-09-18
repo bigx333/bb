@@ -1264,6 +1264,32 @@ describe("PromptBoxInternal submit shortcuts", () => {
     expect(onRemove).toHaveBeenCalledWith("notes.txt");
   });
 
+  it("does not restore submitted text when acceptance clears and unlocks the editor", async () => {
+    const onChange = vi.fn();
+    const props = createPromptBoxProps({ value: "Accepted message", onChange });
+    const view = render(
+      <PromptBoxInternal {...props} submission={{ isSubmitting: true }} />,
+    );
+    await waitFor(() =>
+      expect(getPromptEditorElement().getAttribute("contenteditable")).toBe(
+        "false",
+      ),
+    );
+    onChange.mockClear();
+    view.rerender(
+      <PromptBoxInternal
+        {...props}
+        value=""
+        submission={{ isSubmitting: false }}
+      />,
+    );
+    await waitFor(() => expect(getPromptEditorElement().textContent).toBe(""));
+    expect(getPromptEditorElement().getAttribute("contenteditable")).toBe(
+      "true",
+    );
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("prevents history recall while submitting and restores it when settled", async () => {
     const onSelectEntry = vi.fn();
     const promptBoxRef = createRef<PromptBoxHandle>();
