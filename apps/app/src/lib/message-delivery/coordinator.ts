@@ -101,15 +101,14 @@ export function startMessageDelivery(
     const controller = new AbortController();
     controllers.add(controller);
     let leaseLost = false;
-    let rejectAbort: (error: Error) => void = () => undefined;
+    let rejectAbort: (error: unknown) => void = () => undefined;
     const aborted = new Promise<never>((_resolve, reject) => {
       rejectAbort = reject;
     });
     const onAbort = () =>
       rejectAbort(
-        controller.signal.reason instanceof Error
-          ? controller.signal.reason
-          : new DOMException("Message delivery interrupted", "AbortError"),
+        controller.signal.reason ??
+          new DOMException("Message delivery interrupted", "AbortError"),
       );
     controller.signal.addEventListener("abort", onAbort, { once: true });
     const timeout = setTimeout(
