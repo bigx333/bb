@@ -310,7 +310,7 @@ describe("useThreadHistory", () => {
   it("bounds reusable pages while returning deep foreground content", async () => {
     const { queryClient, wrapper } = createQueryClientTestHarness();
     const latest = page(50);
-    seedHistory(queryClient, [latest]);
+    const { key } = seedHistory(queryClient, [latest]);
     const { result } = renderHook(
       () => useThreadHistory({ threadId: "thread-1", latestTimeline: latest }),
       { wrapper },
@@ -321,6 +321,10 @@ describe("useThreadHistory", () => {
       vi.mocked(sdk.threads.timeline).mockResolvedValueOnce(older);
       await act(async () => {
         expect(await result.current.loadOlder(cursor)).toBe(older);
+        expect(queryClient.getQueryState(key)?.fetchStatus).toBe("idle");
+        expect(
+          queryClient.getQueryData<ThreadHistoryChain>(key)?.pages,
+        ).toHaveLength(Math.min(6 - sequence / 10, 5));
       });
       if (older.timelinePage.olderCursor)
         cursor = older.timelinePage.olderCursor;

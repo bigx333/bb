@@ -144,8 +144,9 @@ export function useThreadTimelineController({
     });
     if (merged) return { loaded: merged, unrefreshed: false };
     if (
+      loaded.rows.length > 0 &&
       store.get(threadTimelineScrollAnchorAtomFamily(threadId))?.atBottom ===
-      false
+        false
     ) {
       return { loaded, unrefreshed: true };
     }
@@ -249,7 +250,7 @@ export function useThreadTimelineController({
         });
         if (merged) {
           loaded = merged;
-        } else if (!detached) {
+        } else if (!detached || loaded.rows.length === 0) {
           loaded = mergeLoadedTimelineWithLatest({
             current: loaded,
             latestTimeline,
@@ -277,7 +278,8 @@ export function useThreadTimelineController({
   const hasOlderTimelineRows = nextOlderCursor !== null;
   const loadOlder = history.loadOlder;
   const loadOlderTimelineRows = useCallback(async (): Promise<void> => {
-    if (!enabled || !nextOlderCursor || !threadId || blocked) return;
+    if (!enabled || !latestTimeline || !nextOlderCursor || !threadId || blocked)
+      return;
     const response = await loadOlder(nextOlderCursor);
     if (!response) return;
     setTracker((previous) => {
@@ -305,6 +307,7 @@ export function useThreadTimelineController({
     });
   }, [
     enabled,
+    latestTimeline,
     nextOlderCursor,
     threadId,
     blocked,

@@ -16,6 +16,7 @@ import {
 import { BbHttpError, sdk } from "@/lib/sdk";
 import {
   compactThreadHistory,
+  cancelThreadHistoryRead,
   createThreadHistoryPage,
   getThreadHistoryGeneration,
   pruneThreadHistory,
@@ -36,6 +37,10 @@ interface ForegroundRead {
   promise: Promise<ThreadTimelineResponse | undefined>;
   resolve: (response: ThreadTimelineResponse | undefined) => void;
   reject: (error: unknown) => void;
+  outcome:
+    | { status: "success"; response: ThreadTimelineResponse | undefined }
+    | { status: "error"; error: unknown }
+    | undefined;
 }
 
 interface HistoryReadState {
@@ -107,13 +112,48 @@ export function useThreadHistory({
   const identity = JSON.stringify(queryKey);
   const state = historyReadState(queryClient, identity);
   const subscribe = useCallback(
-    (listener: () => void) => queryClient.getQueryCache().subscribe(listener),
-    [queryClient],
+    (listener: () => void) =>
+      queryClient.getQueryCache().subscribe((event) => {
+        if (JSON.stringify(event.query.queryKey) === identity) {
+          const foreground = state.foreground;
+          if (
+            foreground &&
+            (event.type === "removed" ||
+              foreground.generation !==
+                getThreadHistoryGeneration(queryClient, threadId).request)
+          ) {
+            state.foreground = undefined;
+            foreground.resolve(undefined);
+          } else if (
+            foreground?.outcome?.status === "success" &&
+            event.type === "updated" &&
+            event.action.type === "success" &&
+            !event.action.manual
+          ) {
+            state.foreground = undefined;
+            foreground.resolve(foreground.outcome.response);
+          } else if (
+            foreground &&
+            event.type === "updated" &&
+            event.action.type === "error"
+          ) {
+            if (event.action.error instanceof CancelledError) {
+              foreground.outcome = undefined;
+            } else if (foreground.outcome?.status === "error") {
+              state.foreground = undefined;
+              foreground.reject(foreground.outcome.error);
+            }
+          }
+        }
+        listener();
+      }),
+    [queryClient, threadId, identity, state],
   );
   const getGeneration = useCallback(() => {
     const owner = getThreadHistoryGeneration(queryClient, threadId);
-    return `${owner.eviction}:${owner.blocked}`;
-  }, [queryClient, threadId]);
+    const fetchStatus = queryClient.getQueryState(queryKey)?.fetchStatus;
+    return `${owner.eviction}:${owner.blocked}:${fetchStatus}`;
+  }, [queryClient, threadId, queryKey]);
   useSyncExternalStore(subscribe, getGeneration, getGeneration);
   const owner = getThreadHistoryGeneration(queryClient, threadId);
   const canRead =
@@ -175,8 +215,7 @@ export function useThreadHistory({
         response: ThreadTimelineResponse | undefined,
       ) => {
         if (!foreground) return;
-        if (state.foreground === foreground) state.foreground = undefined;
-        foreground.resolve(response);
+        foreground.outcome = { status: "success", response };
       };
       const assertCurrent = () => {
         if (signal.aborted || owner.request !== requestGeneration) {
@@ -305,8 +344,7 @@ export function useThreadHistory({
         }
         if (!isStaleCursor(error)) {
           if (foreground) {
-            if (state.foreground === foreground) state.foreground = undefined;
-            foreground.reject(error);
+            foreground.outcome = { status: "error", error };
           }
           throw error;
         }
@@ -334,8 +372,7 @@ export function useThreadHistory({
             throw new CancelledError({ revert: true });
           }
           if (foreground) {
-            if (state.foreground === foreground) state.foreground = undefined;
-            foreground.reject(recoveryError);
+            foreground.outcome = { status: "error", error: recoveryError };
           }
           throw recoveryError;
         }
@@ -385,12 +422,13 @@ export function useThreadHistory({
         promise,
         resolve,
         reject,
+        outcome: undefined,
       };
       state.refreshAfterForeground ||=
         queryClient.getQueryState(queryKey)?.fetchStatus === "fetching";
       state.foreground = foreground;
       void (async () => {
-        await queryClient.cancelQueries({ queryKey, exact: true });
+        await cancelThreadHistoryRead({ queryClient, queryKey });
         if (owner.request !== foreground.generation) {
           if (state.foreground === foreground) state.foreground = undefined;
           foreground.resolve(undefined);

@@ -1167,6 +1167,37 @@ describe("retained thread history", () => {
     expect(result.current.timeline.historyUnrefreshed).toBe(false);
   });
 
+  it("loads a cache miss when a detached scroll anchor remains after history eviction", async () => {
+    const latest = createDeferredPromise<ThreadTimelineResponse>();
+    vi.mocked(sdk.threads.timeline).mockReturnValueOnce(latest.promise);
+    const { wrapper } = createQueryClientTestHarness();
+    const { result } = renderHook(
+      () => ({
+        timeline: useThreadTimelineController({ threadId: "thread-1" }),
+        store: useStore(),
+      }),
+      { wrapper },
+    );
+    act(() =>
+      result.current.store.set(
+        threadTimelineScrollAnchorAtomFamily("thread-1"),
+        {
+          rowId: olderPageRow.id,
+          offsetWithinRow: 12,
+          atBottom: false,
+        },
+      ),
+    );
+    expect(result.current.timeline.timelineLoading).toBe(true);
+    latest.resolve(
+      makeTimelineResponse({ rows: [newestLoadedRow], maxSeq: 1 }),
+    );
+    await waitFor(() =>
+      expect(rowIds(result.current.timeline)).toEqual([newestLoadedRow.id]),
+    );
+    expect(result.current.timeline.historyUnrefreshed).toBe(false);
+  });
+
   it("clears controller-held rows when history access is revoked", async () => {
     const { queryClient, wrapper } = createQueryClientTestHarness();
     seedHistory(queryClient);

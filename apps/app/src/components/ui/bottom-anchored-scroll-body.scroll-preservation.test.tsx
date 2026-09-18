@@ -294,6 +294,23 @@ function renderReplacementTimeline() {
     configurable: true,
     value: SCROLL_AREA_HEIGHT,
   });
+  let scrollTop = scrollArea.scrollTop;
+  Object.defineProperty(scrollArea, "scrollTop", {
+    configurable: true,
+    get: () => {
+      scrollTop = Math.max(
+        0,
+        Math.min(scrollTop, scrollArea.scrollHeight - scrollArea.clientHeight),
+      );
+      return scrollTop;
+    },
+    set: (value: number) => {
+      scrollTop = Math.max(
+        0,
+        Math.min(value, scrollArea.scrollHeight - scrollArea.clientHeight),
+      );
+    },
+  });
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
     function (this: HTMLElement) {
       if (this.dataset.modelTop !== undefined) {
@@ -475,6 +492,16 @@ describe("BottomAnchoredScrollBody scroll preservation", () => {
     act(() => getLatestResizeObserver().trigger());
 
     expect(view.scrollArea.scrollTop).toBe(200);
+
+    view.replace([
+      { id: "a", height: 100 },
+      { id: "b", height: 100 },
+      { id: "c", height: 100 },
+      { id: "d", height: 200 },
+    ]);
+    act(() => getLatestResizeObserver().trigger());
+
+    expect(view.scrollArea.scrollTop).toBe(400);
   });
 
   it("shows the thread scrollbar only while scroll events are active", () => {
