@@ -41,8 +41,14 @@ Timeline queries select physical rows with their internal metadata, then reconst
 only the selected history for projection. The timeline event budget charges for
 the records inside each combined item, so removing physical rows does not cause
 a page to decode substantially more history. Reconstruction passes validated
-payload objects directly to projection instead of parsing them again. Selected fork history recovers completion order before
-applying the existing completed-turn and event-type rules. Forks still create
+payload objects directly to projection instead of parsing them again. A per-connection
+in-memory cache reuses reconstruction only when both stored metadata and the
+completion payload match exactly. It evicts least-recently-used entries above
+8 million accounted text characters or 10,000 reconstructed records, and does
+not retain oversized entries. These are accounting limits, not a byte-exact
+JavaScript heap limit. Current row scope and snapshot filtering are applied
+after reuse; changed output or metadata forces reconstruction. Selected fork
+history recovers completion order before applying the existing completed-turn and event-type rules. Forks still create
 new IDs and sequence numbers. No arbitrary deleted-ID lookup or virtual raw-event
 pagination is provided.
 
@@ -70,5 +76,5 @@ The migrated SQLite regression tests cover eligibility, lossless reconstruction,
 command discard rules, output ownership, atomic rollback, late arrivals,
 highwater, boundary exclusions and one-row raw traversal. Server tests exercise
 the existing live wrapper, rewrite notifications and warmed timeline caches.
-Full-copy measurements and UI evidence accompany the draft PR; prototype
+Full-copy measurements and UI evidence accompany the PR; prototype
 measurements are not implementation guarantees.

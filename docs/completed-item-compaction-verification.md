@@ -1,9 +1,9 @@
 # Completed-item compaction verification
 
-Measured on 2026-09-16 in an isolated worktree based on `5aca5733a5`,
+Storage and maintenance measured on 2026-09-16 in an isolated worktree based on `5aca5733a5`,
 including PR1 (`c663ff1911`, #3766). The final measurements include the
 output-order safeguard and exclusion of compaction from synchronous per-thread
-cleanup. These are observations from private sanitized SQLite copies.
+cleanup. These are observations from private sanitized SQLite copies. The reader section below supersedes the earlier 30-page timing samples and compares the rebased implementation with main.
 
 ## Correctness and storage
 
@@ -19,7 +19,6 @@ cleanup. These are observations from private sanitized SQLite copies.
 | Complete visible timelines         | All 2,326 match, including all 2,223 non-null context values                                                              |
 | Highwater and provider recovery    | All 2,326 match                                                                                                           |
 | Existing side tables               | All 46 non-event/non-cursor/non-migration tables match, including output, search and attachment ownership                 |
-| Default-budget server pages        | All 30 match exactly                                                                                                      |
 | Complete large-thread pagination   | Three largest threads: all 3,816 rendered rows match after complete traversal at a 1,000-row budget; baseline used 10,000 |
 | Other consumers                    | 2,326 latest-output checks, ten large outlines and 100 rollback-only output mutations match                               |
 
@@ -47,9 +46,6 @@ not establish cold-I/O bounds or a maximum event-loop stall.
 | Final live wrapper, 2,500 calls                         | median 0.288 ms; p99 5.46 ms; maximum 322.25 ms   |
 | PR1 live wrapper, same 2,500-call workload              | median 0.243 ms; p99 5.28 ms; maximum 87.34 ms    |
 | Compaction calls / event deletions in final live sample | zero / zero                                       |
-| Median of 30 page case medians, before / after          | 103.62 / 121.55 ms                                |
-| Median paired page increase                             | 8.42 ms                                           |
-| Largest individual page call, before / after            | 391.81 / 464.44 ms                                |
 | Actual background sweep, 100 calls                      | 1,565 total advances; 313 completed-item advances |
 | Maximum sweep / advance in that sample                  | 216.46 / 177.78 ms                                |
 
@@ -77,12 +73,13 @@ At 3.13 completed-item advances per sweep and the existing ten-second cadence,
 the latest sample extrapolates to about **107 idle hours** for first-pass catch-up.
 The initial revision's sample estimated 84 hours. Actual processing time remains
 about five minutes; scheduling, activity and I/O determine elapsed catch-up.
-These are short-sample estimates, not an end-to-end scheduled run. Reader overhead,
-checkpoint stalls and multi-day idle catch-up remain limitations.
+These are short-sample estimates, not an end-to-end scheduled run. Checkpoint
+stalls and multi-day idle catch-up remain limitations. Reader performance was
+subsequently fixed and measured separately below.
 
 ## Automated and UI verification
 
-Final follow-up checks:
+Earlier maintenance follow-up checks (reader-pass checks follow below):
 
 - Turbo DB tests: 44 files, 591 tests pass, using migrated real SQLite.
 - Turbo affected server tests: 14 tests pass, including the previously failing
@@ -111,33 +108,84 @@ under parent thread `thr_vmdgc3ke5y` in `pr2-review/final`. Copies are private a
 mode 0600, with Connect plugin records verified absent. No live database or copied
 Connect configuration was used; nothing was merged or deployed.
 
-## Reader optimization follow-up (2026-09-17)
+## Full-copy reader performance (2026-09-17)
 
-Compared with rebased PR2 `e2091fbea2` (base `0188d91972`), the reader now
-fetches selected completion metadata in one parameterized query instead of
-250-ID batches. SQLite uses the existing events primary-key index; `json_each`
-expands only the supplied ID array. Nested history no longer goes through an
-extra JSON serialization, parse and validation, and reconstruction skips parsing
-completion payloads when it needs none of their fields. Storage, compaction
-rules, cache state and indexes are unchanged.
+Compared main `0bb64f3789` (including #3874 and #3876) with implementation
+`820e4e5bfc`. Later main commits were checked for changes to the measured DB and
+timeline paths. The source fix makes the timeline budget count reconstructed
+records, selects metadata with the physical rows, passes already parsed payloads
+to projection, and reuses reconstruction in a bounded per-connection cache.
+Cache hits require identical stored metadata and completion payloads. Limits are
+8 million accounted text characters and 10,000 reconstructed records; this is
+not a byte-exact heap cap. There are still no new tables or indexes.
 
-Ten large selections, alternating original and optimized reconstruction ten times
-per case, matched exactly. Median relative reconstruction improvement was 22.6%.
-One 10,000-row selection improved from 170.1 to 135.5 ms, with 35 metadata queries
-reduced to one. The query plan uses `sqlite_autoindex_events_1`, not an events scan.
+The benchmark uses the complete sanitized pre-compaction database and its
+compacted counterpart: all 2,326 threads, with every older cursor followed to the
+end. Each request runs both versions and compares the complete response,
+including pagination and context. Three alternating warm samples per version
+follow the first call. The measured interval is the complete server timeline
+builder, including selection, reconstruction and projection; it excludes HTTP,
+network and browser rendering. SQLite uses production cache/mmap settings.
 
-Thirty matching page requests were also measured with six alternating calls per
-implementation, after warming both. All response fields and pagination matched.
-The median paired elapsed reduction was 7.3 ms; process CPU time fell by a median
-paired 8.3 ms, with lower CPU usage in 26 of 30 cases. The host was busy, so elapsed
-timings are approximate and are not expected production latency. This compares
-optimized PR2 with the original rebased PR2; it does not establish that PR2 is as
-fast as main. Component reconstruction savings are not whole-page percentages.
+| Workload | Matching pages | Main / PR2 median warm page time | Median paired change | Sum of warm page medians |
+| --- | ---: | ---: | ---: | ---: |
+| Product settings | 3,027 | 9.73 / 8.78 ms | −1.14 ms | 43.49 / 38.22 s (12.1% lower) |
+| Expanded stress settings | 2,733 | 11.77 / 10.87 ms | −1.13 ms | 58.45 / 51.78 s (11.4% lower) |
 
-The follow-up passes 602 DB tests, 74 server tests, and DB/server typechecks.
-All 2,326 complete timelines and context values match the uncompacted baseline,
-with zero differences or errors. This reader change does not establish a new
-maximum live or background event-loop stall time.
+Product settings use the 1,500-event budget, 20 segments, lazy nested rows,
+32,000 inline output characters, and saved provider display/diagnostic settings.
+The stress workload uses a 10,000-event budget, expanded nested rows, collapsed
+completed turns and 8,000 inline characters. These are two complete traversals
+of the same database, not 5,760 distinct stored pages. Every response matches.
+Neither census has a warm elapsed-time case more than both 5 ms and 10% slower.
+Warm process CPU totals are 12.5% lower for product settings and 11.7% lower for
+the stress workload. Among the 93 product-setting requests taking at least 50 ms
+on main, the median paired improvement is 11.75 ms.
 
-Artifacts and harnesses:
-`/Users/michael/.bb/thread-storage/thr_vmdgc3ke5y/pr2-reader-optimization/`.
+First visits are noisier: product-setting median paired elapsed change is
++0.15 ms, with summed first-call time 7.2% higher but CPU 3.0% lower. Stress
+first-call elapsed and CPU totals are lower. This does not establish that every
+first read is faster. Cases crossing the 5 ms / 10% threshold in elapsed or CPU,
+plus controls, were selected for repeated cold-application-cache and warm checks.
+A cold application cache means a fresh DB wrapper and empty per-connection JS
+caches, not a cold OS disk cache.
+
+All 457 selected product-setting requests and 78 stress requests match in six
+alternating samples per version and cache mode. None exceeds both elapsed-time
+thresholds in either mode. Median paired changes are −1.39 / −2.37 ms for product
+cold/warm checks and −1.05 / −1.85 ms for stress cold/warm checks. Three CPU-only
+outliers were repeated with twelve samples per version and mode; all three then
+have lower PR2 elapsed and CPU medians. All original samples remain in the
+artifacts rather than being discarded.
+
+The two originally blocking large-page regressions now measure 214.11 → 200.16 ms
+and 191.56 → 151.21 ms in the repeated warm stress checks. Fresh application-cache
+medians also improve: 214.22 → 193.46 ms and 204.57 → 185.67 ms. Their responses
+remain identical.
+
+Before backfill, both versions were also run against the same uncompacted copy
+for 45 requests from large threads. All responses match across nine alternating
+samples per version and cache mode. Median paired elapsed overhead is +0.88 ms
+with fresh application caches and +0.76 ms warm; no elapsed case exceeds both
+5 ms and 10%. Summed warm elapsed medians increase 2.7%, and CPU medians 3.4%.
+Two CPU-only cases cross the threshold in different cache modes; this is a small
+pre-backfill cost, not a claim of zero overhead before any rows are compacted.
+
+The inherited benchmark mixed a CommonJS Drizzle driver with the app's ES-module
+schema. Profiling exposed extra generic row-mapping overhead. The final harness
+uses the same ES-module driver as `createConnection` and asserts matching driver
+and native SQLite constructors. Only the corrected `production-*` artifacts
+support these timing results; earlier timing samples are superseded. Earlier
+response-equality checks are supplemented by the complete corrected traversals.
+
+Final source validation: 611 DB tests, 198 affected server tests, and DB/server
+typechecks pass through Turbo. Added tests cover logical work budgets, metadata
+selection, parsed payloads, malformed JSON, cache invalidation, scope/snapshot
+filtering, eviction and oversized-entry bypass. Migration 0127 adds only the
+metadata column; events indexes match the preceding main snapshot.
+
+These measurements address the observed reader regression. They do not establish
+a maximum event-loop stall, a cold-disk latency bound, or a new catch-up estimate.
+The historical maintenance/checkpoint measurements above remain separate.
+Scripts, raw samples and the final report are in parent thread storage
+`pr2-perf-fix/`.
