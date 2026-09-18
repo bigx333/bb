@@ -1,11 +1,4 @@
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useContext,
-  useMemo,
-  type ReactNode,
-} from "react";
+import { useCallback, useContext, useMemo, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import type {
   ThreadChatMessageAction,
@@ -20,7 +13,7 @@ import { Skeleton } from "@bb/shared-ui/skeleton";
 import { cn } from "@bb/shared-ui/lib/utils";
 import type { PromptMentionLinkResolver } from "@/components/promptbox/editor/prompt-mention-link";
 import { ThreadEnvironmentSummary } from "@/components/promptbox/ThreadEnvironmentSummary";
-
+import { EmbeddedThreadChat } from "@/components/thread/embedded-chat";
 import {
   ThreadTimelinePanelContent,
   type ThreadTimelineConsumerMessageAction,
@@ -45,24 +38,6 @@ import {
   getProjectComposeRoutePath,
   getThreadRoutePath,
 } from "@/lib/route-paths";
-
-const EmbeddedThreadChat = lazy(() =>
-  import("@/components/thread/embedded-chat/EmbeddedThreadChat").then(
-    (module) => ({
-      default: module.EmbeddedThreadChat,
-    }),
-  ),
-);
-
-function ThreadChatLoading() {
-  return (
-    <div className="space-y-2 px-4 pt-4">
-      <Skeleton className="h-4 w-3/4 rounded-sm" />
-      <Skeleton className="h-4 w-2/3 rounded-sm" />
-      <Skeleton className="h-4 w-1/2 rounded-sm" />
-    </div>
-  );
-}
 
 export function PluginThreadChat({
   threadId,
@@ -273,7 +248,13 @@ function PluginThreadChatBody({
     );
   }
   if (thread === undefined) {
-    return <ThreadChatLoading />;
+    return (
+      <div className="space-y-2 px-4 pt-4">
+        <Skeleton className="h-4 w-3/4 rounded-sm" />
+        <Skeleton className="h-4 w-2/3 rounded-sm" />
+        <Skeleton className="h-4 w-1/2 rounded-sm" />
+      </div>
+    );
   }
 
   if (variant === "timeline") {
@@ -306,42 +287,40 @@ function PluginThreadChatBody({
 
   return (
     <ThreadProviderContext.Provider value={threadProviderContextValue}>
-      <Suspense fallback={<ThreadChatLoading />}>
-        <EmbeddedThreadChat
-          variant="compact"
-          layout={layout}
-          measure={variant === "full" ? "page" : "panel"}
-          surfaceTone={variant === "compact" ? "sidebar" : "background"}
-          threadId={threadId}
-          projectId={thread.projectId}
-          providerId={thread.providerId}
-          promptContextEnvironmentId={thread.environmentId}
-          resolveMentionLink={resolveMentionLink}
-          leadingContent={leadingContent}
-          consumerMessageActions={consumerMessageActions}
-          includePluginMessageActions={false}
-          onOpenLink={onOpenLink}
-          onOpenLocalFileLink={onOpenLocalFileLink}
-          workspaceRootPath={workspaceRootPath}
-          composer={{
-            draftScope: {
-              kind: "thread",
-              projectId: thread.projectId,
-              threadId,
-            },
-            executionDefaultsThreadId: threadId,
-            executionResetKey: threadId,
-            executionEnvironmentId: thread.environmentId ?? undefined,
-            executionEnvironmentHostId: environment?.hostId,
-            permissionPolicy:
-              permissionPolicy === "editable" ? "editable" : "snapshot",
-            environmentSummary,
-            pluginComposerBottomScope: { kind: "thread", threadId },
-            composerIdentity: `plugin-thread-chat:${threadId}`,
-            focusRequestKey: focusRequest,
-          }}
-        />
-      </Suspense>
+      <EmbeddedThreadChat
+        variant="compact"
+        layout={layout}
+        measure={variant === "full" ? "page" : "panel"}
+        surfaceTone={variant === "compact" ? "sidebar" : "background"}
+        threadId={threadId}
+        projectId={thread.projectId}
+        providerId={thread.providerId}
+        promptContextEnvironmentId={thread.environmentId}
+        resolveMentionLink={resolveMentionLink}
+        leadingContent={leadingContent}
+        consumerMessageActions={consumerMessageActions}
+        includePluginMessageActions={false}
+        onOpenLink={onOpenLink}
+        onOpenLocalFileLink={onOpenLocalFileLink}
+        workspaceRootPath={workspaceRootPath}
+        composer={{
+          draftScope: {
+            kind: "thread",
+            projectId: thread.projectId,
+            threadId,
+          },
+          executionDefaultsThreadId: threadId,
+          executionResetKey: threadId,
+          executionEnvironmentId: thread.environmentId ?? undefined,
+          executionEnvironmentHostId: environment?.hostId,
+          permissionPolicy:
+            permissionPolicy === "editable" ? "editable" : "snapshot",
+          environmentSummary,
+          pluginComposerBottomScope: { kind: "thread", threadId },
+          composerIdentity: `plugin-thread-chat:${threadId}`,
+          focusRequestKey: focusRequest,
+        }}
+      />
     </ThreadProviderContext.Provider>
   );
 }
