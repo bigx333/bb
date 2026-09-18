@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   timelinePanelProps: [] as Array<Record<string, unknown>>,
   timelineProjectIds: [] as Array<string | undefined>,
   resolveMentionLink: vi.fn(),
+  showLatestTimeline: vi.fn(),
 }));
 
 const hostDraftMocks = vi.hoisted(() => ({
@@ -161,6 +162,11 @@ vi.mock("@/components/ui/overflow-fade", () => ({
 
 vi.mock("@/components/thread/timeline", () => ({
   isRunningThreadRuntimeDisplayStatus: (status: string) => status === "active",
+  useThreadTimelineController: () => ({
+    historyUnrefreshed: false,
+    showLatestTimeline: mocks.showLatestTimeline,
+    timelineRows: mocks.timelineRows,
+  }),
   ThreadTimelinePanelContent: (props: Record<string, unknown>) => {
     mocks.timelinePanelProps.push(props);
     mocks.injectedTimelineProps.push(props.timeline);
@@ -490,7 +496,12 @@ describe("EmbeddedThreadChat", () => {
     const rows = screen.getAllByTestId("embedded-chat-timeline-row");
     expect(rows).toHaveLength(2);
     expect(rows[1]?.textContent).toBe("Streamed later");
-    expect(mocks.injectedTimelineProps.at(-1)).toBeUndefined();
+    expect(mocks.injectedTimelineProps.at(-1)).toEqual(
+      expect.objectContaining({
+        timelineRows: mocks.timelineRows,
+        showLatestTimeline: mocks.showLatestTimeline,
+      }),
+    );
   });
 
   it("queues the submitted draft itself while the thread runtime is active", async () => {

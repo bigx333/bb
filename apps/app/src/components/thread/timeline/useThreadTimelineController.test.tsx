@@ -13,13 +13,17 @@ import {
   type ProfilerOnRenderCallback,
   type ReactNode,
 } from "react";
+import { useStore } from "jotai";
 import { MemoryRouter } from "react-router-dom";
 import type { QueryClient } from "@tanstack/react-query";
 import type {
   ThreadTimelineResponse,
   TimelineUserConversationRow,
 } from "@bb/server-contract";
-import { mergeLatestTimelineRows } from "@bb/client-core";
+import {
+  mergeLatestTimelineRows,
+  resolveLoadedTimelineSurfaceKey,
+} from "@bb/client-core";
 import { createDeferredPromise, type DeferredPromise } from "@bb/test-helpers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -28,7 +32,15 @@ import {
 } from "@/components/ui/bottom-anchored-scroll-body.js";
 import { BbHttpError, sdk } from "@/lib/sdk";
 import { OPTIMISTIC_TIMELINE_ROW_ID_PREFIX } from "@bb/client-core";
-import { threadTimelineQueryKey } from "@/hooks/queries/query-keys";
+import {
+  threadHistoryQueryKey,
+  threadTimelineQueryKey,
+} from "@/hooks/queries/query-keys";
+import {
+  createThreadHistoryPage,
+  removeThreadHistory,
+} from "@/hooks/cache-owners/thread-history-cache-owner";
+import { threadTimelineScrollAnchorAtomFamily } from "@/lib/thread-timeline-scroll-anchor";
 import { createQueryClientTestHarness } from "@/test/queryClientTestHarness";
 import { systemRow } from "@/test/fixtures/thread-timeline-rows";
 import { useAutoLoadOlderRows } from "./useAutoLoadOlderRows";
@@ -723,7 +735,7 @@ describe("useThreadTimelineController", () => {
     expect(result.current.hasOlderTimelineRows).toBe(true);
   });
 
-  it("adopts the refetched latest cursor after a stale older-page cursor", async () => {
+  it("rebuilds retained pages once from fresh cursors after a stale older-page cursor", async () => {
     vi.mocked(sdk.threads.timeline)
       .mockResolvedValueOnce(
         makeTimelineResponse({
@@ -757,7 +769,13 @@ describe("useThreadTimelineController", () => {
         }),
       )
       .mockResolvedValueOnce(makeSameSnapshotRealtimeResponse())
-      .mockReturnValueOnce(new Promise(() => {}));
+      .mockResolvedValueOnce(
+        makeTimelineResponse({
+          rows: [olderPageRow],
+          maxSeq: 2,
+          timelinePage: { kind: "older", historySnapshot: "snapshot-1" },
+        }),
+      );
 
     const { wrapper } = createQueryClientTestHarness();
     const { result } = renderHook(
@@ -793,14 +811,8 @@ describe("useThreadTimelineController", () => {
     });
     expect(timelineRequests[3]?.[0]).toMatchObject({ afterSequence: "1" });
     expect(result.current.isLoadingOlderTimelineRows).toBe(false);
-    expect(result.current.hasOlderTimelineRows).toBe(true);
-
-    act(() => {
-      void result.current.loadOlderTimelineRows();
-    });
-    await waitFor(() => {
-      expect(sdk.threads.timeline).toHaveBeenCalledTimes(5);
-    });
+    expect(result.current.hasOlderTimelineRows).toBe(false);
+    expect(sdk.threads.timeline).toHaveBeenCalledTimes(5);
     expect(vi.mocked(sdk.threads.timeline).mock.calls[4]?.[0]).toMatchObject({
       beforeAnchorId: newestLoadedRow.id,
       beforeAnchorSeq: "1",
@@ -1009,6 +1021,169 @@ describe("useThreadTimelineController", () => {
       threadId: "thread-1",
     });
     expect(rowIds(result.current.timeline)).toEqual([contextClearRow.id]);
+  });
+});
+
+describe("retained thread history", () => {
+  function seedHistory(queryClient: QueryClient, validatedAt = Date.now()) {
+    const latest = makeTimelineResponse({
+      rows: [newestLoadedRow],
+      maxSeq: 1,
+      timelinePage: {
+        historySnapshot: "snapshot-1",
+        hasOlderRows: true,
+        olderCursor: { anchorId: newestLoadedRow.id, anchorSeq: 1 },
+      },
+    });
+    const older = makeTimelineResponse({
+      rows: [olderPageRow],
+      maxSeq: 1,
+      timelinePage: { kind: "older", historySnapshot: "snapshot-1" },
+    });
+    queryClient.setQueryData(TIMELINE_QUERY_KEY, latest);
+    const surfaceKey = resolveLoadedTimelineSurfaceKey("thread-1", latest);
+    queryClient.setQueryData(
+      threadHistoryQueryKey(
+        "thread-1",
+        surfaceKey,
+        latest.timelinePage.segmentLimit,
+      ),
+      {
+        surfaceKey,
+        pages: [
+          createThreadHistoryPage(latest, null, validatedAt),
+          createThreadHistoryPage(
+            older,
+            latest.timelinePage.olderCursor,
+            validatedAt,
+          ),
+        ],
+      },
+      { updatedAt: validatedAt },
+    );
+    return { latest, older };
+  }
+
+  it("shows retained rows immediately on a warm return without fetching fresh pages", () => {
+    const { queryClient, wrapper } = createQueryClientTestHarness();
+    seedHistory(queryClient);
+    const first = renderHook(
+      () => useThreadTimelineController({ threadId: "thread-1" }),
+      { wrapper },
+    );
+    expect(rowIds(first.result.current)).toEqual([
+      olderPageRow.id,
+      newestLoadedRow.id,
+    ]);
+    first.unmount();
+    const returned = renderHook(
+      () => useThreadTimelineController({ threadId: "thread-1" }),
+      { wrapper },
+    );
+    expect(rowIds(returned.result.current)).toEqual([
+      olderPageRow.id,
+      newestLoadedRow.id,
+    ]);
+    expect(sdk.threads.timeline).not.toHaveBeenCalled();
+  });
+
+  it("keeps cached rows during a background failure and applies a successful retry", async () => {
+    const { queryClient, wrapper } = createQueryClientTestHarness();
+    const { latest, older } = seedHistory(queryClient, Date.now() - 10_000);
+    const refresh = createDeferredPromise<ThreadTimelineResponse>();
+    vi.mocked(sdk.threads.timeline).mockReturnValueOnce(refresh.promise);
+    const { result } = renderHook(
+      () => useThreadTimelineController({ threadId: "thread-1" }),
+      { wrapper },
+    );
+    expect(rowIds(result.current)).toEqual([
+      olderPageRow.id,
+      newestLoadedRow.id,
+    ]);
+    await waitFor(() => expect(sdk.threads.timeline).toHaveBeenCalledTimes(1));
+    refresh.reject(makeServerError());
+    await waitFor(() =>
+      expect(result.current.historyRefreshError).not.toBeNull(),
+    );
+    expect(rowIds(result.current)).toEqual([
+      olderPageRow.id,
+      newestLoadedRow.id,
+    ]);
+    const editedOlder = { ...olderPageRow, text: "Updated older message" };
+    vi.mocked(sdk.threads.timeline)
+      .mockResolvedValueOnce(latest)
+      .mockResolvedValueOnce({ ...older, rows: [editedOlder] });
+    await act(async () => {
+      await result.current.refreshHistory();
+    });
+    await waitFor(() =>
+      expect(result.current.timelineRows[0]).toEqual(editedOlder),
+    );
+    expect(result.current.historyRefreshError).toBeNull();
+    expect(result.current.timelineLoading).toBe(false);
+  });
+
+  it("holds detached history when the latest window has a gap until the reader selects latest", async () => {
+    const { queryClient, wrapper } = createQueryClientTestHarness();
+    seedHistory(queryClient);
+    const { result } = renderHook(
+      () => ({
+        timeline: useThreadTimelineController({ threadId: "thread-1" }),
+        store: useStore(),
+      }),
+      { wrapper },
+    );
+    act(() => {
+      result.current.store.set(
+        threadTimelineScrollAnchorAtomFamily("thread-1"),
+        {
+          rowId: olderPageRow.id,
+          offsetWithinRow: 12,
+          atBottom: false,
+        },
+      );
+      queryClient.setQueryData(
+        TIMELINE_QUERY_KEY,
+        makeTimelineResponse({
+          rows: [contextClearRow],
+          maxSeq: 10,
+          timelinePage: {
+            historySnapshot: "snapshot-2",
+            hasOlderRows: true,
+            olderCursor: { anchorId: contextClearRow.id, anchorSeq: 10 },
+          },
+        }),
+      );
+    });
+    await waitFor(() =>
+      expect(result.current.timeline.historyUnrefreshed).toBe(true),
+    );
+    expect(rowIds(result.current.timeline)).toEqual([
+      olderPageRow.id,
+      newestLoadedRow.id,
+    ]);
+    act(() => result.current.timeline.showLatestTimeline());
+    expect(rowIds(result.current.timeline)).toEqual([contextClearRow.id]);
+    expect(result.current.timeline.historyUnrefreshed).toBe(false);
+  });
+
+  it("clears controller-held rows when history access is revoked", async () => {
+    const { queryClient, wrapper } = createQueryClientTestHarness();
+    seedHistory(queryClient);
+    const { result } = renderHook(
+      () => useThreadTimelineController({ threadId: "thread-1" }),
+      { wrapper },
+    );
+    expect(rowIds(result.current)).toHaveLength(2);
+    act(() => removeThreadHistory({ queryClient, threadId: "thread-1" }));
+    await waitFor(() => expect(rowIds(result.current)).toEqual([]));
+    act(() =>
+      queryClient.setQueryData(
+        TIMELINE_QUERY_KEY,
+        makeTimelineResponse({ rows: [realtimeRow], maxSeq: 2 }),
+      ),
+    );
+    expect(rowIds(result.current)).toEqual([]);
   });
 });
 

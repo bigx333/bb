@@ -3,16 +3,20 @@ import { applyTimelineDelta } from "@bb/server-contract";
 import type {
   ThreadTimelineResponse,
   TimelineCommandWorkRow,
+  TimelineDelegationWorkRow,
   TimelinePaginationCursor,
   TimelineRow,
   TimelineTurnRow,
   TimelineUserConversationRow,
 } from "@bb/server-contract";
 import {
+  buildLoadedTimelineFromPages,
   mergeLoadedTimelineWithLatest,
   mergeLatestTimelineRows,
   prependOlderTimelineRows,
   recoverLoadedTimelineAfterStaleCursor,
+  reconcileLoadedTimelineWithHistoryPages,
+  tryMergeLoadedTimelineWithLatest,
   type LoadedTimelineState,
 } from "../src/timeline/timeline-merge.js";
 
@@ -99,6 +103,32 @@ function turnSummaryRow(args: TimelineTurnTestRowArgs): TimelineTurnRow {
     summaryCount: 1,
     completedAt: args.sequence,
     children: args.children ?? null,
+  };
+}
+
+function delegationRow(
+  args: TimelineTurnTestRowArgs,
+): TimelineDelegationWorkRow {
+  return {
+    id: args.id,
+    threadId: "thread-1",
+    turnId: "turn-1",
+    sourceSeqStart: args.sequence,
+    sourceSeqEnd: args.endSequence ?? args.sequence,
+    startedAt: args.sequence,
+    createdAt: args.sequence,
+    kind: "work",
+    workKind: "delegation",
+    status: "completed",
+    callId: args.id,
+    toolName: "agent",
+    childRef: "child-thread",
+    background: false,
+    subagentType: null,
+    description: null,
+    output: "",
+    completedAt: args.sequence,
+    childRows: args.children ?? [],
   };
 }
 
@@ -985,5 +1015,376 @@ describe("snapshot content pagination", () => {
         loadedRows: [summary],
       }),
     ).toEqual([{ ...summary, children: [child] }]);
+  });
+});
+
+describe("retained history refresh", () => {
+  const surfaceKey = "thread-1:default";
+
+  function snapshotResponse(
+    rows: TimelineRow[],
+    olderCursor: TimelinePaginationCursor | null,
+    maxSeq = 30,
+  ): ThreadTimelineResponse {
+    const response = makeTimelineResponse(rows, olderCursor, maxSeq);
+    response.timelinePage.historySnapshot = "fresh";
+    response.timelinePage.olderRowsSourceSeqEnd = null;
+    return response;
+  }
+
+  it("assembles contiguous leaf pages without dropping split nested content", () => {
+    const children = [11, 12, 13, 14].map((sequence) =>
+      commandRow({ id: `command-${sequence}`, sequence }),
+    );
+    const summary = turnSummaryRow({
+      id: "summary",
+      sequence: 10,
+      endSequence: 20,
+      children,
+    });
+    const latest = snapshotResponse(
+      [{ ...summary, children: children.slice(2) }],
+      timelineCursor({ id: "leaf-2", sequence: 10 }),
+    );
+    latest.timelinePage.contentPage = {
+      anchorSeq: 10,
+      start: 2,
+      end: 4,
+      total: 4,
+    };
+    latest.timelinePage.segmentLimit = 8;
+    const older = snapshotResponse(
+      [{ ...summary, children: children.slice(0, 2) }],
+      null,
+    );
+    older.timelinePage.kind = "older";
+    older.timelinePage.contentPage = {
+      anchorSeq: 10,
+      start: 0,
+      end: 2,
+      total: 4,
+    };
+
+    const result = buildLoadedTimelineFromPages({
+      pages: [latest, older],
+      surfaceKey,
+    });
+
+    expect(result?.rows).toEqual([summary]);
+    expect(result?.olderCursor).toBeNull();
+    expect(result?.historySnapshot).toBe("fresh");
+    expect(
+      buildLoadedTimelineFromPages({
+        pages: [
+          latest,
+          {
+            ...older,
+            timelinePage: { ...older.timelinePage, historySnapshot: "old" },
+          },
+        ],
+        surfaceKey,
+      }),
+    ).toBeNull();
+    expect(
+      buildLoadedTimelineFromPages({
+        pages: [
+          latest,
+          {
+            ...older,
+            timelinePage: {
+              ...older.timelinePage,
+              contentPage: { anchorSeq: 10, start: 0, end: 1, total: 4 },
+            },
+          },
+        ],
+        surfaceKey,
+      }),
+    ).toBeNull();
+  });
+
+  it("replaces covered deletions and edits while retaining deeper rows and unchanged child identity", () => {
+    const deep = userRow({ id: "deep", sequence: 1 });
+    const unchanged = commandRow({ id: "unchanged", sequence: 11 });
+    const removed = commandRow({ id: "removed", sequence: 12 });
+    const edited = commandRow({ id: "edited", sequence: 13 });
+    const summary = turnSummaryRow({
+      id: "summary",
+      sequence: 10,
+      endSequence: 15,
+      children: [unchanged, removed, edited],
+    });
+    const tail = userRow({ id: "tail", sequence: 20 });
+    const current = {
+      ...makeLoadedTimelineState(
+        [deep, summary, commandRow({ id: "deleted-row", sequence: 19 }), tail],
+        timelineCursor({ id: "deep-cursor", sequence: 1 }),
+        20,
+      ),
+      historySnapshot: "old",
+    };
+    const fresh = snapshotResponse(
+      [
+        {
+          ...summary,
+          children: [{ ...unchanged }, { ...edited, output: "new output" }],
+        },
+        { ...tail },
+      ],
+      timelineCursor({ id: "fresh-cursor", sequence: 10 }),
+    );
+
+    const result = reconcileLoadedTimelineWithHistoryPages({
+      current,
+      pages: [fresh],
+      surfaceKey,
+    });
+
+    expect(result?.rows.map((row) => row.id)).toEqual([
+      "deep",
+      "summary",
+      "tail",
+    ]);
+    expect(result?.rows[0]).toBe(deep);
+    expect(result?.rows[2]).toBe(tail);
+    const refreshedSummary = result?.rows[1];
+    expect(refreshedSummary?.kind).toBe("turn");
+    if (refreshedSummary?.kind !== "turn") throw new Error("Expected summary");
+    expect(refreshedSummary.children?.map((row) => row.id)).toEqual([
+      "unchanged",
+      "edited",
+    ]);
+    expect(refreshedSummary.children?.[0]).toBe(unchanged);
+    expect(refreshedSummary.children?.[1]).toMatchObject({
+      output: "new output",
+    });
+    expect(result?.olderCursor).toBe(current.olderCursor);
+  });
+
+  it.each(["turn", "delegation"] as const)(
+    "preserves uncovered %s leaves while replacing the authoritative suffix",
+    (kind) => {
+      const prefix = commandRow({ id: "prefix", sequence: 11 });
+      const edited = commandRow({ id: "edited", sequence: 12 });
+      const deleted = commandRow({ id: "deleted", sequence: 13 });
+      const unchanged = commandRow({ id: "unchanged", sequence: 14 });
+      const makeRow = kind === "turn" ? turnSummaryRow : delegationRow;
+      const current = {
+        ...makeLoadedTimelineState(
+          [
+            makeRow({
+              id: "nested",
+              sequence: 10,
+              endSequence: 20,
+              children: [prefix, edited, deleted, unchanged],
+            }),
+          ],
+          null,
+          20,
+        ),
+        historySnapshot: "old",
+      };
+      const fresh = snapshotResponse(
+        [
+          makeRow({
+            id: "nested",
+            sequence: 10,
+            endSequence: 20,
+            children: [{ ...edited, output: "new" }, { ...unchanged }],
+          }),
+        ],
+        timelineCursor({ id: "fresh-content", sequence: 10 }),
+      );
+      fresh.timelinePage.contentPage = {
+        anchorSeq: 10,
+        start: 1,
+        end: 3,
+        total: 3,
+      };
+      fresh.timelinePage.olderRowsSourceSeqEnd = prefix.sourceSeqEnd;
+
+      const result = reconcileLoadedTimelineWithHistoryPages({
+        current,
+        pages: [fresh],
+        surfaceKey,
+      });
+      const row = result?.rows[0];
+      const children =
+        row?.kind === "turn"
+          ? row.children
+          : row?.kind === "work" && row.workKind === "delegation"
+            ? row.childRows
+            : null;
+
+      expect(children?.map((child) => child.id)).toEqual([
+        "prefix",
+        "edited",
+        "unchanged",
+      ]);
+      expect(children?.[0]).toBe(prefix);
+      expect(children?.[1]).toMatchObject({ output: "new" });
+      expect(children?.[2]).toBe(unchanged);
+      expect(result?.olderCursor).toBeNull();
+    },
+  );
+
+  it("refuses a shifted partial boundary instead of retaining a deleted leaf", () => {
+    const children = [11, 12, 13].map((sequence) =>
+      commandRow({ id: `child-${sequence}`, sequence }),
+    );
+    const current = {
+      ...makeLoadedTimelineState(
+        [
+          turnSummaryRow({
+            id: "summary",
+            sequence: 10,
+            endSequence: 20,
+            children,
+          }),
+        ],
+        null,
+        20,
+      ),
+      historySnapshot: "old",
+    };
+    const fresh = snapshotResponse(
+      [
+        turnSummaryRow({
+          id: "summary",
+          sequence: 10,
+          endSequence: 20,
+          children: [children[2]!],
+        }),
+      ],
+      timelineCursor({ id: "fresh-content", sequence: 10 }),
+    );
+    fresh.timelinePage.contentPage = {
+      anchorSeq: 10,
+      start: 1,
+      end: 2,
+      total: 2,
+    };
+    fresh.timelinePage.olderRowsSourceSeqEnd = children[0]!.sourceSeqEnd;
+
+    expect(
+      reconcileLoadedTimelineWithHistoryPages({
+        current,
+        pages: [fresh],
+        surfaceKey,
+      }),
+    ).toBeNull();
+    expect(current.rows[0]).toMatchObject({ children });
+  });
+
+  it("refuses a partial prefix the current window has not fully loaded", () => {
+    const child = commandRow({ id: "child", sequence: 13 });
+    const row = turnSummaryRow({
+      id: "summary",
+      sequence: 10,
+      children: [child],
+    });
+    const cursor = timelineCursor({ id: "old-content", sequence: 10 });
+    const current = {
+      ...makeLoadedTimelineState([row], cursor, 20),
+      historySnapshot: "old",
+    };
+    const fresh = snapshotResponse(
+      [row],
+      timelineCursor({ id: "fresh-content", sequence: 10 }),
+    );
+    fresh.timelinePage.contentPage = {
+      anchorSeq: 10,
+      start: 2,
+      end: 3,
+      total: 3,
+    };
+
+    expect(
+      reconcileLoadedTimelineWithHistoryPages({
+        current,
+        pages: [fresh],
+        surfaceKey,
+      }),
+    ).toBeNull();
+  });
+
+  it("reports a gap without changing the legacy fallback or detached rows", () => {
+    const current = {
+      ...makeLoadedTimelineState(
+        [userRow({ id: "old", sequence: 1 })],
+        null,
+        10,
+      ),
+      historySnapshot: "old",
+    };
+    const latestTimeline = snapshotResponse(
+      [userRow({ id: "fresh", sequence: 20 })],
+      timelineCursor({ id: "fresh-cursor", sequence: 20 }),
+    );
+
+    expect(
+      tryMergeLoadedTimelineWithLatest({ current, latestTimeline, surfaceKey }),
+    ).toBeNull();
+    expect(
+      reconcileLoadedTimelineWithHistoryPages({
+        current,
+        pages: [latestTimeline],
+        surfaceKey,
+      }),
+    ).toBeNull();
+    expect(
+      mergeLoadedTimelineWithLatest({ current, latestTimeline, surfaceKey })
+        .rows,
+    ).toBe(latestTimeline.rows);
+    expect(current.rows.map((row) => row.id)).toEqual(["old"]);
+  });
+
+  it("refuses a splice when the refreshed snapshot changed uncovered history", () => {
+    const latest = userRow({ id: "latest", sequence: 10 });
+    const current = {
+      ...makeLoadedTimelineState(
+        [userRow({ id: "older", sequence: 1 }), latest],
+        null,
+        20,
+      ),
+      historySnapshot: "old",
+    };
+    const fresh = snapshotResponse(
+      [latest],
+      timelineCursor({ id: "fresh-cursor", sequence: 10 }),
+    );
+    fresh.timelinePage.olderRowsSourceSeqEnd = 21;
+
+    expect(
+      reconcileLoadedTimelineWithHistoryPages({
+        current,
+        pages: [fresh],
+        surfaceKey,
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps the current array when a coherent refreshed window is unchanged", () => {
+    const row = userRow({ id: "same", sequence: 1 });
+    const current = {
+      ...makeLoadedTimelineState([row], null, 30),
+      historySnapshot: "old",
+    };
+    const fresh = snapshotResponse([{ ...row }], null);
+
+    expect(
+      reconcileLoadedTimelineWithHistoryPages({
+        current,
+        pages: [fresh],
+        surfaceKey,
+      })?.rows,
+    ).toBe(current.rows);
+    expect(buildLoadedTimelineFromPages({ pages: [], surfaceKey })).toBeNull();
+    expect(
+      reconcileLoadedTimelineWithHistoryPages({
+        current: makeLoadedTimelineState([], null, 0),
+        pages: [fresh],
+        surfaceKey,
+      })?.rows,
+    ).toBe(fresh.rows);
   });
 });

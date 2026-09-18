@@ -36,6 +36,7 @@ import {
   sidebarNavigationQueryKey,
   systemConfigQueryKey,
   threadPromptHistoryQueryKeyPrefix,
+  threadHistoryQueryKeyPrefix,
   threadSearchQueryKeyPrefix,
   threadsQueryKey,
 } from "../queries/query-keys";
@@ -44,6 +45,10 @@ import type { QueryClientArg } from "../cache-effect-types";
 import { clearCachedModelCatalogs } from "@/lib/model-catalog-cache";
 import { bumpAllDiffPatchEvictionGenerations } from "./environment-diff-patch-cache-owner";
 import { invalidateSystemVersion } from "./system-version-cache-owner";
+import {
+  invalidateThreadHistory,
+  type ThreadHistoryChain,
+} from "./thread-history-cache-owner";
 import {
   invalidateQueryKeys,
   refetchFailedActiveQueryKeys,
@@ -70,6 +75,11 @@ export function invalidateRealtimeQueriesAfterServerReconnect({
       { cancelRefetch: false },
     );
   }
+  invalidateThreadHistoryBefore({
+    queryClient,
+    timestamp: disconnectedAt,
+    includeUnfetched: true,
+  });
   invalidateSystemVersion({ queryClient });
   bumpAllDiffPatchEvictionGenerations();
   queryClient.removeQueries({
@@ -82,7 +92,10 @@ export function refetchErroredRealtimeQueriesOnInitialConnect({
 }: QueryClientArg): void {
   refetchFailedActiveQueryKeys({
     queryClient,
-    queryKeys: getServerReconnectInvalidationQueryKeys(),
+    queryKeys: [
+      ...getServerReconnectInvalidationQueryKeys(),
+      threadHistoryQueryKeyPrefix(),
+    ],
   });
 }
 
@@ -101,6 +114,38 @@ export function invalidateRealtimeQueriesFetchedBeforeInitialConnect({
         query.state.dataUpdatedAt !== 0 &&
         query.state.dataUpdatedAt < connectedAt,
     });
+  }
+  invalidateThreadHistoryBefore({
+    queryClient,
+    timestamp: connectedAt,
+    includeUnfetched: false,
+  });
+}
+
+function invalidateThreadHistoryBefore({
+  queryClient,
+  timestamp,
+  includeUnfetched,
+}: QueryClientArg & { timestamp: number; includeUnfetched: boolean }): void {
+  const threadIds = new Set<string>();
+  for (const [
+    queryKey,
+    chain,
+  ] of queryClient.getQueriesData<ThreadHistoryChain>({
+    queryKey: threadHistoryQueryKeyPrefix(),
+  })) {
+    const threadId = queryKey[1];
+    if (
+      typeof threadId === "string" &&
+      (chain === undefined
+        ? includeUnfetched
+        : chain.pages.some((page) => page.validatedAt < timestamp))
+    ) {
+      threadIds.add(threadId);
+    }
+  }
+  for (const threadId of threadIds) {
+    void invalidateThreadHistory({ queryClient, threadId });
   }
 }
 
@@ -170,6 +215,7 @@ export function invalidateGeneralSettingsDependencies({
       allThreadTimelineTurnSummaryDetailsQueryKeyPrefix(),
     ],
   });
+  void invalidateThreadHistory({ queryClient });
 }
 
 export function resetModelCatalogsAfterStreamerModeChange({

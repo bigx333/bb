@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { useContext } from "react";
 import { getDefaultStore } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BottomAnchoredScrollBody,
+  TimelineReplacementScrollAnchor,
+  TimelineScrollRestoreRowIdContext,
   useBottomAnchoredScroll,
 } from "@/components/ui/bottom-anchored-scroll-body";
 import { threadTimelineScrollAnchorAtomFamily } from "@/lib/thread-timeline-scroll-anchor";
@@ -204,6 +207,132 @@ function readAnchor(threadId: string) {
   return getDefaultStore().get(threadTimelineScrollAnchorAtomFamily(threadId));
 }
 
+interface ReplacementRow {
+  id: string;
+  height: number;
+}
+
+function ReplacementRows({
+  rows,
+  hiddenRows,
+  realizeRestoreRow,
+}: {
+  rows: ReplacementRow[];
+  hiddenRows: ReadonlySet<string>;
+  realizeRestoreRow: boolean;
+}) {
+  const restoreRowId = useContext(TimelineScrollRestoreRowIdContext);
+  let top = 0;
+  return (
+    <div
+      data-timeline-row-list="top-level"
+      data-model-height={rows.reduce((sum, row) => sum + row.height, 0)}
+    >
+      <div data-timeline-virtual-spacer="">
+        {rows.map((row) => {
+          const rowTop = top;
+          top += row.height;
+          if (
+            hiddenRows.has(row.id) &&
+            !(realizeRestoreRow && restoreRowId === row.id)
+          ) {
+            return null;
+          }
+          return (
+            <div
+              key={row.id}
+              data-timeline-row-id={row.id}
+              data-model-top={rowTop}
+              data-model-row-height={row.height}
+            >
+              {row.id}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function renderReplacementTimeline() {
+  let rows = ["a", "b", "c", "d"].map((id) => ({ id, height: 100 }));
+  let replacementKey = {};
+  let hiddenRows: ReadonlySet<string> = new Set();
+  let realizeRestoreRow = true;
+  const timeline = () => (
+    <BottomAnchoredScrollBody
+      footer={null}
+      maxWidthClassName="max-w-none"
+      scrollAreaClassName={SCROLL_AREA_CLASS}
+    >
+      <TimelineReplacementScrollAnchor
+        rows={rows}
+        replacementKey={replacementKey}
+      />
+      <ReplacementRows
+        rows={rows}
+        hiddenRows={hiddenRows}
+        realizeRestoreRow={realizeRestoreRow}
+      />
+      <ScrollToBottomControl />
+    </BottomAnchoredScrollBody>
+  );
+  const view = render(timeline());
+  const scrollArea = requireHTMLElement(
+    view.container.querySelector(`.${SCROLL_AREA_CLASS}`),
+  );
+  Object.defineProperty(scrollArea, "scrollHeight", {
+    configurable: true,
+    get: () =>
+      Number(
+        view.container
+          .querySelector("[data-model-height]")
+          ?.getAttribute("data-model-height"),
+      ),
+  });
+  Object.defineProperty(scrollArea, "clientHeight", {
+    configurable: true,
+    value: SCROLL_AREA_HEIGHT,
+  });
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (this.dataset.modelTop !== undefined) {
+        return new DOMRect(
+          0,
+          Number(this.dataset.modelTop) - scrollArea.scrollTop,
+          100,
+          Number(this.dataset.modelRowHeight),
+        );
+      }
+      return new DOMRect(0, 0, 100, SCROLL_AREA_HEIGHT);
+    },
+  );
+  act(() => getLatestResizeObserver().trigger());
+  return {
+    scrollArea,
+    getByRole: view.getByRole,
+    detach: () => {
+      fireEvent.wheel(scrollArea, { deltaY: -150 });
+      scrollArea.scrollTop = 150;
+      fireEvent.scroll(scrollArea);
+    },
+    replace: (
+      nextRows: ReplacementRow[],
+      options?: {
+        hiddenRows?: ReadonlySet<string>;
+        realizeRestoreRow?: boolean;
+        keepReplacementKey?: boolean;
+      },
+    ) => {
+      rows = nextRows;
+      hiddenRows = options?.hiddenRows ?? new Set();
+      realizeRestoreRow = options?.realizeRestoreRow ?? true;
+      if (!options?.keepReplacementKey) replacementKey = {};
+      view.rerender(timeline());
+    },
+  };
+}
+
 beforeEach(() => {
   ResizeObserverMock.instances = [];
   vi.stubGlobal("ResizeObserver", ResizeObserverMock);
@@ -222,6 +351,132 @@ afterEach(() => {
 });
 
 describe("BottomAnchoredScrollBody scroll preservation", () => {
+  it("preserves the visible row offset when refreshed content above it shrinks", () => {
+    const view = renderReplacementTimeline();
+    view.detach();
+
+    view.replace([
+      { id: "a", height: 40 },
+      { id: "b", height: 100 },
+      { id: "c", height: 100 },
+      { id: "d", height: 100 },
+    ]);
+    act(() => getLatestResizeObserver().trigger());
+
+    expect(view.scrollArea.scrollTop).toBe(90);
+  });
+
+  it("restores the nearest surviving row after the visible row is deleted", () => {
+    const view = renderReplacementTimeline();
+    view.detach();
+
+    view.replace([
+      { id: "a", height: 100 },
+      { id: "c", height: 100 },
+      { id: "d", height: 100 },
+    ]);
+    act(() => getLatestResizeObserver().trigger());
+
+    expect(view.scrollArea.scrollTop).toBe(100);
+  });
+
+  it("clamps the saved offset when the visible row itself shrinks", () => {
+    const view = renderReplacementTimeline();
+    view.detach();
+
+    view.replace([
+      { id: "a", height: 100 },
+      { id: "b", height: 40 },
+      { id: "c", height: 100 },
+      { id: "d", height: 100 },
+    ]);
+
+    expect(view.scrollArea.scrollTop).toBe(139);
+  });
+
+  it("realizes a replaced anchor outside the virtualized range before restoring it", () => {
+    const view = renderReplacementTimeline();
+    view.detach();
+
+    view.replace(
+      [
+        { id: "older", height: 300 },
+        ...["a", "b", "c", "d"].map((id) => ({ id, height: 100 })),
+      ],
+      { hiddenRows: new Set(["b"]) },
+    );
+
+    expect(view.scrollArea.scrollTop).toBe(450);
+  });
+
+  it("keeps the detached position when no refreshed row survives", () => {
+    const view = renderReplacementTimeline();
+    view.detach();
+
+    view.replace([
+      { id: "new-a", height: 300 },
+      { id: "new-b", height: 300 },
+    ]);
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      act(() => getLatestResizeObserver().trigger());
+    }
+
+    expect(view.scrollArea.scrollTop).toBe(150);
+  });
+
+  it("lets user scrolling cancel a pending replacement restore", () => {
+    const view = renderReplacementTimeline();
+    view.detach();
+    const replacement = ["a", "b", "c", "d"].map((id) => ({
+      id,
+      height: 100,
+    }));
+    view.replace(replacement, {
+      hiddenRows: new Set(["b"]),
+      realizeRestoreRow: false,
+    });
+
+    fireEvent.wheel(view.scrollArea, { deltaY: -120 });
+    view.scrollArea.scrollTop = 30;
+    fireEvent.scroll(view.scrollArea);
+    view.replace(replacement, { keepReplacementKey: true });
+    act(() => getLatestResizeObserver().trigger());
+
+    expect(view.scrollArea.scrollTop).toBe(30);
+  });
+
+  it("lets explicit navigation to the bottom cancel a pending replacement restore", () => {
+    const view = renderReplacementTimeline();
+    view.detach();
+    const replacement = ["a", "b", "c", "d"].map((id) => ({
+      id,
+      height: 100,
+    }));
+    view.replace(replacement, {
+      hiddenRows: new Set(["b"]),
+      realizeRestoreRow: false,
+    });
+
+    fireEvent.click(view.getByRole("button", { name: "Bottom" }));
+    view.replace(replacement, { keepReplacementKey: true });
+    act(() => getLatestResizeObserver().trigger());
+
+    expect(view.scrollArea.scrollTop).toBe(300);
+  });
+
+  it("continues following the bottom through a history replacement", () => {
+    const view = renderReplacementTimeline();
+
+    view.replace([
+      { id: "a", height: 100 },
+      { id: "b", height: 100 },
+      { id: "c", height: 100 },
+    ]);
+    act(() => getLatestResizeObserver().trigger());
+
+    expect(view.scrollArea.scrollTop).toBe(200);
+  });
+
   it("shows the thread scrollbar only while scroll events are active", () => {
     vi.useFakeTimers();
     const { scrollArea } = renderTimeline({

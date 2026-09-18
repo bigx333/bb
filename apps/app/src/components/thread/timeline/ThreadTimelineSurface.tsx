@@ -43,8 +43,12 @@ export interface ThreadTimelineSurfaceProps {
   contextBoundarySeq: number | null;
   threadOriginKind?: ThreadOriginKind | null;
   hasOlderTimelineRows?: boolean;
+  historyRefreshError?: Error | null;
+  historyUnrefreshed?: boolean;
+  historyReplacementKey?: object | null;
   hostConnectionNotice?: HostConnectionNotice | null;
   isLoadingOlderTimelineRows?: boolean;
+  isRefreshingHistory?: boolean;
   isThreadTimelinePending: boolean;
   timelineError: boolean;
   loadingContent?: ReactNode;
@@ -58,6 +62,8 @@ export interface ThreadTimelineSurfaceProps {
   consumerMessageActions?: readonly ThreadTimelineConsumerMessageAction[];
   includePluginMessageActions?: boolean;
   onLoadOlderRows?: () => Promise<void> | void;
+  onRefreshHistory?: () => Promise<void>;
+  onShowLatestTimeline?: () => void;
   onOpenLink?: ThreadTimelineLinkHandler;
   onOpenLocalFileLink?: ThreadTimelineLocalFileLinkHandler;
   onOpenPluginPanel?: ThreadTimelineOpenPluginPanelHandler;
@@ -145,8 +151,12 @@ export function ThreadTimelineSurface({
   contextBoundarySeq,
   threadOriginKind = null,
   hasOlderTimelineRows = false,
+  historyRefreshError = null,
+  historyUnrefreshed = false,
+  historyReplacementKey = null,
   hostConnectionNotice,
   isLoadingOlderTimelineRows = false,
+  isRefreshingHistory = false,
   isThreadTimelinePending,
   timelineError,
   loadingContent,
@@ -160,6 +170,7 @@ export function ThreadTimelineSurface({
   consumerMessageActions,
   includePluginMessageActions,
   onLoadOlderRows,
+  onRefreshHistory,
   onOpenLink,
   onOpenLocalFileLink,
   onOpenPluginPanel,
@@ -203,12 +214,37 @@ export function ThreadTimelineSurface({
     hasOlderTimelineRows &&
     onLoadOlderRows !== undefined &&
     !isThreadTimelinePending &&
-    !timelineError;
+    (!timelineError || timelineRowsWithPendingStop.length > 0);
 
   return (
     <TimelineReasoningExpansionProvider key={threadId}>
       <ConversationTimeline className="flex-1">
         {leadingContent}
+        {timelineRowsWithPendingStop.length > 0 &&
+        (historyRefreshError !== null || historyUnrefreshed) ? (
+          <div
+            role="status"
+            className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
+          >
+            <span>
+              {historyRefreshError !== null
+                ? "Couldn't refresh history. Showing saved messages."
+                : "This history hasn't been refreshed yet."}
+            </span>
+            {onRefreshHistory ? (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto px-1 text-xs"
+                disabled={isRefreshingHistory}
+                onClick={() => void onRefreshHistory().catch(() => {})}
+              >
+                {isRefreshingHistory ? "Refreshing…" : "Retry"}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
         {showLoadOlderRows ? (
           <LoadOlderMessages
             key={`context-boundary:${contextBoundarySeq}`}
@@ -217,15 +253,16 @@ export function ThreadTimelineSurface({
             onLoadOlderRows={onLoadOlderRows}
           />
         ) : null}
-        {isThreadTimelinePending ? (
+        {isThreadTimelinePending && timelineRowsWithPendingStop.length === 0 ? (
           (loadingContent ?? <DelayedThreadLoadingIndicator />)
-        ) : timelineError ? (
+        ) : timelineError && timelineRowsWithPendingStop.length === 0 ? (
           <TimelineStatusIndicator
             label="Failed to load timeline"
             className={timelineErrorClassName}
           />
         ) : timelineRowsWithPendingStop.length > 0 ? (
           <ThreadTimelineRows
+            historyReplacementKey={historyReplacementKey}
             canSpawnChild={canSpawnChild}
             threadOriginKind={threadOriginKind}
             onForkMessage={onForkMessage}

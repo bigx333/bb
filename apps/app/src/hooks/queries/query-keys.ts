@@ -52,6 +52,7 @@ const ENVIRONMENT_DIFF_FILE_QUERY_KEY = "environmentDiffFile";
 const ENVIRONMENT_FILE_PREVIEW_QUERY_KEY = "environmentFilePreview";
 const ENVIRONMENT_PATHS_QUERY_KEY = "environmentPaths";
 export const THREAD_TIMELINE_QUERY_KEY = "threadTimeline";
+export const THREAD_HISTORY_QUERY_KEY = "threadHistory";
 const THREAD_CONVERSATION_OUTLINE_QUERY_KEY = "threadConversationOutline";
 const THREAD_TIMELINE_TURN_SUMMARY_DETAILS_QUERY_KEY =
   "threadTimelineTurnSummaryDetails";
@@ -923,6 +924,20 @@ export function threadTimelineQueryKey(
   threadId: string,
 ): ThreadTimelineQueryKey {
   return [THREAD_TIMELINE_QUERY_KEY, threadId];
+}
+
+export function threadHistoryQueryKey(
+  threadId: string,
+  surfaceKey: string,
+  segmentLimit: number,
+) {
+  return [THREAD_HISTORY_QUERY_KEY, threadId, surfaceKey, segmentLimit] as const;
+}
+
+export function threadHistoryQueryKeyPrefix(threadId?: string) {
+  return threadId === undefined
+    ? ([THREAD_HISTORY_QUERY_KEY] as const)
+    : ([THREAD_HISTORY_QUERY_KEY, threadId] as const);
 }
 
 export function threadConversationOutlineQueryKey(

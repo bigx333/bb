@@ -100,6 +100,7 @@ import {
 } from "./PluginTimelineRendererBody.js";
 import type { PromptMentionLinkResolver } from "@/components/promptbox/editor/prompt-mention-link";
 import {
+  TimelineReplacementScrollAnchor,
   TimelineScrollRestoreRowIdContext,
   useBottomAnchoredScroll,
 } from "@/components/ui/bottom-anchored-scroll-body.js";
@@ -167,6 +168,7 @@ export interface ThreadTimelineRowsProps {
   resolveImageViewSrc?: ThreadTimelineImageViewSrcResolver;
   resolveUserAttachmentImageSrc?: UserAttachmentImageSrcResolver;
   hasOlderTimelineRows?: boolean;
+  historyReplacementKey?: object | null;
   isLoadingOlderTimelineRows?: boolean;
   onLoadOlderRows?: () => Promise<void> | void;
   timelineRows: TimelineRow[];
@@ -2180,6 +2182,10 @@ function ThreadTimelineRowsForTimelineView(props: ThreadTimelineRowsProps) {
                         snapRevision={heightSnapRevision}
                         animateGrowth={!scopeActive}
                       >
+                        <TimelineReplacementScrollAnchor
+                          rows={rows}
+                          replacementKey={props.historyReplacementKey ?? null}
+                        />
                         <TimelineRowsList
                           hasOlderTimelineRows={props.hasOlderTimelineRows}
                           isLoadingOlderTimelineRows={

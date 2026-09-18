@@ -49,8 +49,13 @@ export function ThreadTimelinePanelContent({
   workspaceRootPath,
 }: ThreadTimelinePanelContentProps) {
   const threadQuery = useThread(threadId);
+  const threadAccessError =
+    threadQuery.error instanceof BbHttpError &&
+    [401, 403, 404].includes(threadQuery.error.status)
+      ? threadQuery.error
+      : null;
   const ownedTimeline = useThreadTimelineController({
-    enabled: timeline === undefined,
+    enabled: timeline === undefined && threadAccessError === null,
     surfaceKey,
     threadId,
   });
@@ -80,11 +85,7 @@ export function ThreadTimelinePanelContent({
           isRunningThreadRuntimeDisplayStatus(displayStatus) ||
           backgroundOnlyIndicatorLabel !== undefined)));
   const timelineRows = resolvedTimeline.timelineRows;
-  const isChildThreadMissing =
-    threadQuery.error instanceof BbHttpError &&
-    threadQuery.error.status === 404;
-
-  if (isChildThreadMissing) {
+  if (threadAccessError !== null) {
     return (
       <ConversationTimeline className="flex-1">
         {leadingContent}
@@ -100,7 +101,11 @@ export function ThreadTimelinePanelContent({
       activeThinking={resolvedTimeline.activeThinking}
       contextBoundarySeq={resolvedTimeline.contextBoundarySeq}
       hasOlderTimelineRows={resolvedTimeline.hasOlderTimelineRows}
+      historyRefreshError={resolvedTimeline.historyRefreshError}
+      historyUnrefreshed={resolvedTimeline.historyUnrefreshed}
+      historyReplacementKey={resolvedTimeline.historyReplacementKey}
       isLoadingOlderTimelineRows={resolvedTimeline.isLoadingOlderTimelineRows}
+      isRefreshingHistory={resolvedTimeline.isRefreshingHistory}
       isThreadTimelinePending={
         resolvedTimeline.timelineLoading &&
         timelineRows.length === 0 &&
@@ -116,6 +121,8 @@ export function ThreadTimelinePanelContent({
       consumerMessageActions={consumerMessageActions}
       includePluginMessageActions={includePluginMessageActions}
       onLoadOlderRows={resolvedTimeline.loadOlderTimelineRows}
+      onRefreshHistory={resolvedTimeline.refreshHistory}
+      onShowLatestTimeline={resolvedTimeline.showLatestTimeline}
       onOpenLink={onOpenLink}
       onOpenLocalFileLink={onOpenLocalFileLink}
       projectId={projectId}

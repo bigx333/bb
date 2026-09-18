@@ -22,6 +22,10 @@ import type {
 } from "../cache-effect-types";
 import { invalidateQueryKeys } from "./cache-effect-utils";
 import {
+  invalidateThreadHistory,
+  removeThreadHistory,
+} from "./thread-history-cache-owner";
+import {
   getProjectListInvalidationQueryKeys,
   getProjectPromptHistoryInvalidationQueryKeys,
   getProjectSourceDependentInvalidationQueryKeys,
@@ -221,6 +225,7 @@ export function invalidateThreadHistoryRewriteQueries({
   queryClient,
   threadId,
 }: ThreadArg): void {
+  void invalidateThreadHistory({ queryClient, threadId });
   invalidateThreadAcceptedMessageQueriesWithoutRealtime({
     queryClient,
     threadId,
@@ -276,6 +281,7 @@ export function removeThreadScopedQueries({
   queryClient,
   threadId,
 }: ThreadArg): void {
+  removeThreadHistory({ queryClient, threadId });
   queryClient.removeQueries({ queryKey: threadQueryKey(threadId) });
   queryClient.removeQueries({
     queryKey: threadTimelineQueryKeyPrefix(threadId),

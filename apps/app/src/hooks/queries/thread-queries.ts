@@ -905,13 +905,13 @@ interface FetchThreadTimelineArgs {
 
 export const COMPACT_THREAD_TIMELINE_SEGMENT_LIMIT = 8;
 
-function resolveThreadTimelineSegmentLimit(): number | undefined {
+export function resolveThreadTimelineSegmentLimit(): number | undefined {
   return getMediaQuerySnapshot(COMPACT_VIEWPORT_QUERY)
     ? COMPACT_THREAD_TIMELINE_SEGMENT_LIMIT
     : undefined;
 }
 
-async function fetchThreadTimeline({
+export async function fetchThreadTimeline({
   queryClient,
   signal,
   threadId,

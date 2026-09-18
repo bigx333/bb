@@ -39,12 +39,14 @@ import { OverflowFade } from "@/components/ui/overflow-fade";
 import {
   ThreadTimelinePanelContent,
   ThreadTimelineSurface,
+  useThreadTimelineController,
   type ThreadTimelineAddToChatHandler,
   type ThreadTimelineConsumerMessageAction,
   type ThreadTimelineLinkHandler,
   type ThreadTimelineLocalFileLinkHandler,
   type ThreadTimelineSurfaceProps,
 } from "@/components/thread/timeline";
+import { ThreadTimelineLatestContext } from "@/components/thread/timeline/ThreadTimelineLatestContext";
 import { useThreadCreationOptions } from "@/hooks/useThreadCreationOptions";
 import {
   getLatestPendingInteraction,
@@ -64,6 +66,7 @@ import { useMarkThreadRead } from "@/hooks/mutations/thread-state-mutations";
 import { useThreadReadTracking } from "@/hooks/useThreadReadTracking";
 import { useComposerTextEffects } from "@/lib/composer-text-effects";
 import { showMutationErrorToast } from "@/lib/mutation-errors";
+import { BbHttpError } from "@/lib/sdk";
 import type { PromptDraftScope } from "@/hooks/usePromptDraftStorage";
 import { appToast } from "@/components/ui/app-toast";
 import {
@@ -192,23 +195,35 @@ function EmbeddedThreadChatHostedFooter({
   scrollOverlay,
   surface,
 }: EmbeddedThreadChatHostedFooterProps) {
+  const latestTimeline = useMemo(
+    () =>
+      surface.onShowLatestTimeline === undefined
+        ? null
+        : {
+            historyUnrefreshed: surface.historyUnrefreshed ?? false,
+            showLatestTimeline: surface.onShowLatestTimeline,
+          },
+    [surface.historyUnrefreshed, surface.onShowLatestTimeline],
+  );
   return (
     <div
       data-thread-window=""
       className="flex h-full min-h-0 min-w-0 flex-col overflow-clip"
     >
-      <PageShell
-        key={surface.threadId}
-        scrollBehavior="bottom-anchor"
-        scrollAnchorThreadId={surface.threadId}
-        shellClassName="!mx-0 !mt-0 md:!mx-0 md:!mt-0"
-        contentClassName="gap-2 pt-4"
-        footerClassName="chat-prompt-box"
-        footer={footer}
-        scrollOverlay={scrollOverlay}
-      >
-        <ThreadTimelineSurface {...surface} />
-      </PageShell>
+      <ThreadTimelineLatestContext.Provider value={latestTimeline}>
+        <PageShell
+          key={surface.threadId}
+          scrollBehavior="bottom-anchor"
+          scrollAnchorThreadId={surface.threadId}
+          shellClassName="!mx-0 !mt-0 md:!mx-0 md:!mt-0"
+          contentClassName="gap-2 pt-4"
+          footerClassName="chat-prompt-box"
+          footer={footer}
+          scrollOverlay={scrollOverlay}
+        >
+          <ThreadTimelineSurface {...surface} />
+        </PageShell>
+      </ThreadTimelineLatestContext.Provider>
     </div>
   );
 }
@@ -240,6 +255,14 @@ function EmbeddedThreadChatWithComposer({
   const sendThreadMessage = useSendThreadMessage();
   const createQueuedMessage = useCreateThreadQueuedMessage();
   const threadQuery = useThread(threadId);
+  const timeline = useThreadTimelineController({
+    enabled: !(
+      threadQuery.error instanceof BbHttpError &&
+      [401, 403, 404].includes(threadQuery.error.status)
+    ),
+    surfaceKey,
+    threadId,
+  });
   const pendingInteractionsQuery = useThreadPendingInteractions(threadId);
   const activePendingInteraction = getLatestPendingInteraction(
     pendingInteractionsQuery.data,
@@ -1161,6 +1184,7 @@ function EmbeddedThreadChatWithComposer({
   const maxWidthClassName = measure === "page" ? "max-w-[760px]" : "max-w-none";
   const timelineBody = (
     <ThreadTimelinePanelContent
+      timeline={timeline}
       isTurnSubmitting={isTurnSubmitting}
       leadingContent={leadingContent}
       consumerMessageActions={consumerMessageActions}
@@ -1178,44 +1202,48 @@ function EmbeddedThreadChatWithComposer({
 
   if (layout === "document") {
     return (
-      <div
-        key={surfaceKey}
-        data-thread-window=""
-        data-surface-tone={surfaceTone}
-        className={cn("flex min-w-0 flex-col", surfaceClassName)}
-      >
+      <ThreadTimelineLatestContext.Provider value={timeline}>
         <div
-          className={cn(
-            "mx-auto flex w-full min-w-0 flex-col",
-            measure === "page" ? "px-4 pb-3 pt-3" : "px-2 pb-3 pt-3",
-            maxWidthClassName,
-          )}
+          key={surfaceKey}
+          data-thread-window=""
+          data-surface-tone={surfaceTone}
+          className={cn("flex min-w-0 flex-col", surfaceClassName)}
         >
-          {timelineBody}
+          <div
+            className={cn(
+              "mx-auto flex w-full min-w-0 flex-col",
+              measure === "page" ? "px-4 pb-3 pt-3" : "px-2 pb-3 pt-3",
+              maxWidthClassName,
+            )}
+          >
+            {timelineBody}
+          </div>
+          <div className="sticky bottom-0 z-20">{footer}</div>
         </div>
-        <div className="sticky bottom-0 z-20">{footer}</div>
-      </div>
+      </ThreadTimelineLatestContext.Provider>
     );
   }
 
   return (
-    <div
-      data-thread-window=""
-      data-surface-tone={surfaceTone}
-      className="flex min-h-0 flex-1 flex-col"
-    >
-      <BottomAnchoredScrollBody
-        key={surfaceKey}
-        scrollAreaClassName={surfaceClassName}
-        contentClassName={
-          measure === "page" ? "!pb-3 !pt-3" : "!px-2 !pb-3 !pt-3"
-        }
-        maxWidthClassName={maxWidthClassName}
-        footer={footer}
-        scrollAnchorThreadId={threadId}
+    <ThreadTimelineLatestContext.Provider value={timeline}>
+      <div
+        data-thread-window=""
+        data-surface-tone={surfaceTone}
+        className="flex min-h-0 flex-1 flex-col"
       >
-        {timelineBody}
-      </BottomAnchoredScrollBody>
-    </div>
+        <BottomAnchoredScrollBody
+          key={surfaceKey}
+          scrollAreaClassName={surfaceClassName}
+          contentClassName={
+            measure === "page" ? "!pb-3 !pt-3" : "!px-2 !pb-3 !pt-3"
+          }
+          maxWidthClassName={maxWidthClassName}
+          footer={footer}
+          scrollAnchorThreadId={threadId}
+        >
+          {timelineBody}
+        </BottomAnchoredScrollBody>
+      </div>
+    </ThreadTimelineLatestContext.Provider>
   );
 }
