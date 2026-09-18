@@ -1007,23 +1007,15 @@ export function ThreadDetailPromptArea({
         ...baseRequest,
         ...(pluginSubmission === undefined ? {} : { pluginSubmission }),
       };
-      const clearedSubmittedDraft =
-        promptDraft.clearIfCurrentMatches(submittedDraft);
       setBottomAttachmentError(null);
-      try {
-        const created = await createThread.mutateAsync(request);
-        navigate(
-          getThreadRoutePath({
-            projectId: created.projectId,
-            threadId: created.id,
-          }),
-        );
-      } catch (error) {
-        if (clearedSubmittedDraft) {
-          promptDraft.restoreIfEmpty(submittedDraft);
-        }
-        throw error;
-      }
+      const created = await createThread.mutateAsync(request);
+      promptDraft.clearIfCurrentMatches(submittedDraft);
+      navigate(
+        getThreadRoutePath({
+          projectId: created.projectId,
+          threadId: created.id,
+        }),
+      );
       return true;
     },
     [
@@ -1042,7 +1034,7 @@ export function ThreadDetailPromptArea({
   );
 
   const handleSend = useCallback(async () => {
-    if (createQueuedMessage.isPending) {
+    if (isFollowUpSubmitting) {
       return;
     }
     const submittedDraft = currentPromptDraft;
@@ -1061,9 +1053,6 @@ export function ThreadDetailPromptArea({
       return;
     }
 
-    if (!isQueuingMessage) {
-      promptDraft.clearIfCurrentMatches(submittedDraft);
-    }
     setBottomAttachmentError(null);
 
     try {
@@ -1085,10 +1074,10 @@ export function ThreadDetailPromptArea({
         });
         if (request) {
           await sendMessage.mutateAsync(request);
+          promptDraft.clearIfCurrentMatches(submittedDraft);
         }
       }
     } catch (nextError) {
-      promptDraft.restoreIfEmpty(submittedDraft);
       showMutationErrorToast({
         error: nextError,
         fallbackMessage: isQueuingMessage
@@ -1104,6 +1093,7 @@ export function ThreadDetailPromptArea({
     currentPromptDraftInput,
     followUpExecutionSelection,
     isDefaultExecutionOptionsLoading,
+    isFollowUpSubmitting,
     isHandoffSelection,
     promptDraft,
     sendMessage,
@@ -1116,6 +1106,9 @@ export function ThreadDetailPromptArea({
       submitOptions: ExperimentalComposerSubmitOptions,
       pluginSubmission: SendMessageRequest["pluginSubmission"],
     ) => {
+      if (isFollowUpSubmitting) {
+        throw new Error("A message is still being submitted.");
+      }
       if (isHandoffSelection) {
         if (effectiveSelectedModel.length === 0) {
           throw new Error("The selected model is still loading.");
@@ -1153,8 +1146,6 @@ export function ThreadDetailPromptArea({
       if (request === null) {
         throw new Error("Type a message before submitting it.");
       }
-      const clearedSubmittedDraft =
-        promptDraft.clearIfCurrentMatches(submittedDraft);
       setBottomAttachmentError(null);
       try {
         await sendMessage.mutateAsync({
@@ -1164,10 +1155,8 @@ export function ThreadDetailPromptArea({
             : { sendAt: submitOptions.sendAt }),
           ...(pluginSubmission === undefined ? {} : { pluginSubmission }),
         });
+        promptDraft.clearIfCurrentMatches(submittedDraft);
       } catch (scheduleError) {
-        if (clearedSubmittedDraft) {
-          promptDraft.restoreIfEmpty(submittedDraft);
-        }
         throw new Error(
           getMutationErrorMessage({
             error: scheduleError,
@@ -1182,6 +1171,7 @@ export function ThreadDetailPromptArea({
       effectiveSelectedModel,
       followUpExecutionSelection,
       isDefaultExecutionOptionsLoading,
+      isFollowUpSubmitting,
       isHandoffSelection,
       promptDraft,
       sendMessage,
@@ -1211,15 +1201,14 @@ export function ThreadDetailPromptArea({
     }
 
     if (shortcutRequest.kind === "draft") {
-      promptDraft.clearIfCurrentMatches(submittedDraft);
       setBottomAttachmentError(null);
       await runWhileFollowUpShortcutSending(
         setIsFollowUpShortcutSending,
         async () => {
           try {
             await sendMessage.mutateAsync(shortcutRequest.request);
+            promptDraft.clearIfCurrentMatches(submittedDraft);
           } catch (nextError) {
-            promptDraft.restoreIfEmpty(submittedDraft);
             showMutationErrorToast({
               error: nextError,
               fallbackMessage: "Failed to send message",

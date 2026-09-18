@@ -606,7 +606,9 @@ function FollowUpPromptBoxWithComposer({
   const modifierSubmitHint = (action: "queue" | "steer"): string =>
     onModifierSubmit ? `, ${modifierSubmitShortcutLabel()} to ${action}` : "";
   const executionControlsDisabled =
-    (executionReadOnly ?? false) || hasPendingInteraction;
+    (executionReadOnly ?? false) ||
+    hasPendingInteraction ||
+    composer.isFollowUpSubmitting;
   const footerStart = useMemo(
     () => (
       <ExecutionControls {...execution} disabled={executionControlsDisabled} />
@@ -621,7 +623,9 @@ function FollowUpPromptBoxWithComposer({
       activePromptMode,
     });
   const permissionReadOnlyResolved =
-    (permissionReadOnly ?? false) || hasPendingInteraction;
+    (permissionReadOnly ?? false) ||
+    hasPendingInteraction ||
+    composer.isFollowUpSubmitting;
   const permissionPickerDisabled =
     permissionReadOnlyResolved || permissionPickerDisabledByPlanMode;
   const permissionControl = useMemo(

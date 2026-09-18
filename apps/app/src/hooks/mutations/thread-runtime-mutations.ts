@@ -166,10 +166,27 @@ export function useCreateThread() {
   });
 }
 
-export function useSendThreadMessage() {
+const sendThreadMessageMutationKey = ["send-thread-message"];
+
+export function useSendThreadMessage(threadId?: string) {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  const pendingCount = useIsMutating({
+    mutationKey: sendThreadMessageMutationKey,
+    predicate: ({ state }) => {
+      const variables = state.variables;
+      return (
+        threadId !== undefined &&
+        typeof variables === "object" &&
+        variables !== null &&
+        "id" in variables &&
+        variables.id === threadId
+      );
+    },
+  });
+
+  const mutation = useMutation({
+    mutationKey: sendThreadMessageMutationKey,
     meta: {
       errorMessage: "Failed to send message.",
       lifecycleOperation: "send_message",
@@ -225,6 +242,8 @@ export function useSendThreadMessage() {
       });
     },
   });
+
+  return { ...mutation, isPending: mutation.isPending || pendingCount > 0 };
 }
 
 export function useEditThreadMessage() {

@@ -1197,6 +1197,112 @@ describe("PromptBoxInternal controlled value sync", () => {
 });
 
 describe("PromptBoxInternal submit shortcuts", () => {
+  it("keeps text and attachments unchanged while submitting and unlocks when settled", async () => {
+    const onChange = vi.fn();
+    const onAttachFiles = vi.fn();
+    const onRemove = vi.fn();
+    const promptBoxRef = createRef<PromptBoxHandle>();
+    const props = createPromptBoxProps({
+      value: "Keep this message",
+      onChange,
+      promptBoxRef,
+      attachments: {
+        items: [
+          {
+            type: "localFile",
+            name: "notes.txt",
+            path: "notes.txt",
+            sizeBytes: 1,
+          },
+        ],
+        onAttachFiles,
+        onRemove,
+      },
+    });
+    const view = render(
+      <PromptBoxInternal {...props} submission={{ isSubmitting: true }} />,
+    );
+    const editor = getPromptEditorElement();
+    await waitFor(() =>
+      expect(editor.getAttribute("contenteditable")).toBe("false"),
+    );
+    onChange.mockClear();
+    const file = new File(["new attachment"], "new.txt", {
+      type: "text/plain",
+    });
+    const attachmentInput = view.container.querySelector('input[type="file"]');
+    if (!(attachmentInput instanceof HTMLInputElement))
+      throw new Error("Attachment input was not rendered");
+    pasteClipboard({ files: [file], plainText: "overwrite" });
+    fireEvent.change(attachmentInput, { target: { files: [file] } });
+    fireEvent.drop(editor, { dataTransfer: { files: [file] } });
+    expect(
+      screen.queryByRole("button", { name: "Remove notes.txt" }),
+    ).toBeNull();
+    expect(editor.textContent).toBe("Keep this message");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onAttachFiles).not.toHaveBeenCalled();
+    expect(onRemove).not.toHaveBeenCalled();
+
+    view.rerender(
+      <PromptBoxInternal {...props} submission={{ isSubmitting: false }} />,
+    );
+    await waitFor(() =>
+      expect(editor.getAttribute("contenteditable")).toBe("true"),
+    );
+    await focusPromptEnd(promptBoxRef);
+    pastePlainText(" after failure");
+    await waitFor(() =>
+      expect(onChange).toHaveBeenLastCalledWith(
+        "Keep this message after failure",
+        [],
+      ),
+    );
+    fireEvent.change(attachmentInput, { target: { files: [file] } });
+    expect(onAttachFiles).toHaveBeenCalledWith([file]);
+    fireEvent.click(screen.getByRole("button", { name: "Remove notes.txt" }));
+    expect(onRemove).toHaveBeenCalledWith("notes.txt");
+  });
+
+  it("prevents history recall while submitting and restores it when settled", async () => {
+    const onSelectEntry = vi.fn();
+    const promptBoxRef = createRef<PromptBoxHandle>();
+    const previousDraft = {
+      ...emptyPromptDraftState(),
+      text: "Previous message",
+    };
+    const props = createPromptBoxProps({
+      promptBoxRef,
+      history: {
+        currentDraft: emptyPromptDraftState(),
+        entries: [previousDraft],
+        onSelectEntry,
+        resetKey: "submission-history",
+      },
+    });
+    const view = render(
+      <PromptBoxInternal {...props} submission={{ isSubmitting: true }} />,
+    );
+    const editor = getPromptEditorElement();
+    await waitFor(() =>
+      expect(editor.getAttribute("contenteditable")).toBe("false"),
+    );
+    await focusPromptEnd(promptBoxRef);
+    fireEvent.keyDown(editor, { key: "ArrowUp" });
+    expect(onSelectEntry).not.toHaveBeenCalled();
+    expect(editor.textContent).toBe("");
+
+    view.rerender(
+      <PromptBoxInternal {...props} submission={{ isSubmitting: false }} />,
+    );
+    await waitFor(() =>
+      expect(editor.getAttribute("contenteditable")).toBe("true"),
+    );
+    await focusPromptEnd(promptBoxRef);
+    fireEvent.keyDown(editor, { key: "ArrowUp" });
+    expect(onSelectEntry).toHaveBeenCalledWith(previousDraft);
+  });
+
   it("exposes the disabled submit reason as its label and hover tooltip", async () => {
     const reason = "Loading models from the selected machine...";
     render(

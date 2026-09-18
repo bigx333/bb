@@ -237,7 +237,7 @@ function EmbeddedThreadChatWithComposer({
   const surfaceKey = threadId;
   const markThreadRead = useMarkThreadRead();
   const stopThread = useStopThread();
-  const sendThreadMessage = useSendThreadMessage();
+  const sendThreadMessage = useSendThreadMessage(threadId);
   const createQueuedMessage = useCreateThreadQueuedMessage(threadId);
   const threadQuery = useThread(threadId);
   const pendingInteractionsQuery = useThreadPendingInteractions(threadId);
@@ -494,27 +494,21 @@ function EmbeddedThreadChatWithComposer({
     if (
       submittedInput.length === 0 ||
       isTurnSubmitting ||
+      sendThreadMessage.isPending ||
       createQueuedMessage.isPending
     ) {
       return;
-    }
-    const isQueuingMessage = shouldQueueFollowUpMessage(displayStatus);
-    if (!isQueuingMessage) {
-      promptDraft.clearIfCurrentMatches(submittedDraft);
     }
     setBottomAttachmentError(null);
     setIsTurnSubmitting(true);
     void defaultSendOrQueueInput(submittedInput)
       .then(() => {
-        if (isQueuingMessage) {
-          promptDraft.clearIfCurrentMatches(submittedDraft);
-        }
+        promptDraft.clearIfCurrentMatches(submittedDraft);
       })
       .catch((error) => {
         if (!isMountedRef.current) {
           return;
         }
-        promptDraft.restoreIfEmpty(submittedDraft);
         showMutationErrorToast({
           error,
           fallbackMessage: "Failed to send message",
@@ -535,6 +529,7 @@ function EmbeddedThreadChatWithComposer({
     defaultSendOrQueueInput,
     displayStatus,
     isTurnSubmitting,
+    sendThreadMessage.isPending,
     promptDraft,
     setBottomAttachmentError,
   ]);
@@ -554,7 +549,7 @@ function EmbeddedThreadChatWithComposer({
   const hasPromptDraftInput = currentPromptDraftInput.length > 0;
   const canSubmitModifierShortcut = canSubmitFollowUpShortcut({
     hasPromptDraftInput,
-    isFollowUpSubmitting: isTurnSubmitting,
+    isFollowUpSubmitting: isTurnSubmitting || sendThreadMessage.isPending,
     isQueueMutationPending,
     queuedMessageCount: queuedMessages.length,
     runtimeDisplayStatus: displayStatus,
@@ -579,7 +574,6 @@ function EmbeddedThreadChatWithComposer({
       return;
     }
 
-    promptDraft.clearIfCurrentMatches(submittedDraft);
     setBottomAttachmentError(null);
     setIsTurnSubmitting(true);
     void sendThreadMessage
@@ -590,13 +584,13 @@ function EmbeddedThreadChatWithComposer({
         ...executionRequestFields,
       })
       .then((result) => {
+        promptDraft.clearIfCurrentMatches(submittedDraft);
         reportQueuedSendDelivery(result.delivery);
       })
       .catch((error) => {
         if (!isMountedRef.current) {
           return;
         }
-        promptDraft.restoreIfEmpty(submittedDraft);
         showMutationErrorToast({
           error,
           fallbackMessage: "Failed to send message",
@@ -811,7 +805,10 @@ function EmbeddedThreadChatWithComposer({
         entries: [],
         onSelectEntry: promptDraft.setDraft,
       } satisfies HistoryConfig,
-      isFollowUpSubmitting: isTurnSubmitting || createQueuedMessage.isPending,
+      isFollowUpSubmitting:
+        isTurnSubmitting ||
+        sendThreadMessage.isPending ||
+        createQueuedMessage.isPending,
       message: currentPromptDraft.text,
       mentionRanges: currentPromptDraft.mentions,
       onChangeMessage: promptDraft.setTextAndMentions,
@@ -833,6 +830,7 @@ function EmbeddedThreadChatWithComposer({
       handleModifierSubmit,
       handleSubmit,
       isTurnSubmitting,
+      sendThreadMessage.isPending,
       promptDraft.setDraft,
       promptDraft.setTextAndMentions,
       steerActiveThreadOnEnter,

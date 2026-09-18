@@ -528,30 +528,35 @@ describe("EmbeddedThreadChat", () => {
     });
   });
 
-  it("preserves a pending queued draft through unmount and network failure", async () => {
-    const submission = createDeferredPromise<void>();
-    mocks.createQueuedMessageMutateAsync.mockReturnValueOnce(
-      submission.promise,
-    );
-    mocks.threadRuntimeDisplayStatus = "active";
-    const view = renderEmbeddedChat();
-    fireEvent.change(screen.getByTestId("embedded-chat-composer"), {
-      target: { value: "Do not lose this message" },
-    });
-    fireEvent.click(screen.getByText("Send"));
+  it.each(["active", "idle"] as const)(
+    "preserves a pending draft through unmount and network failure when %s",
+    async (status) => {
+      const submission = createDeferredPromise<void>();
+      const submit =
+        status === "active"
+          ? mocks.createQueuedMessageMutateAsync
+          : mocks.sendThreadMessageMutateAsync;
+      submit.mockReturnValueOnce(submission.promise);
+      mocks.threadRuntimeDisplayStatus = status;
+      const view = renderEmbeddedChat();
+      fireEvent.change(screen.getByTestId("embedded-chat-composer"), {
+        target: { value: "Do not lose this message" },
+      });
+      fireEvent.click(screen.getByText("Send"));
 
-    expect(
-      screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
-    ).toBe("Do not lose this message");
-    view.unmount();
-    await act(async () => {
-      submission.reject(new TypeError("Failed to fetch"));
-    });
-    renderEmbeddedChat();
-    expect(
-      screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
-    ).toBe("Do not lose this message");
-  });
+      expect(
+        screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
+      ).toBe("Do not lose this message");
+      view.unmount();
+      await act(async () => {
+        submission.reject(new TypeError("Failed to fetch"));
+      });
+      renderEmbeddedChat();
+      expect(
+        screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
+      ).toBe("Do not lose this message");
+    },
+  );
 
   it("does not resubmit a draft while another composer owns its pending request", () => {
     mocks.createQueuedMessageIsPending = true;

@@ -477,19 +477,37 @@ describe("thread runtime mutations", () => {
     );
   });
 
-  it.each(["accepted", "failed"])(
-    "shares a pending queue submission across remounts until it is %s",
-    async (outcome) => {
+  it.each([
+    ["send", "accepted"],
+    ["send", "failed"],
+    ["queue", "accepted"],
+    ["queue", "failed"],
+  ] as const)(
+    "shares a pending %s submission across remounts until it is %s",
+    async (kind, outcome) => {
       const { wrapper } = createQueryClientTestHarness();
-      const submission = createDeferredPromise<ThreadQueuedMessage>();
-      vi.mocked(sdk.threads.queuedMessages.create).mockReturnValueOnce(
-        submission.promise,
-      );
-      const first = renderHook(() => useCreateThreadQueuedMessage("thread-1"), {
-        wrapper,
-      });
+      const submission = createDeferredPromise<void>();
+      if (kind === "send") {
+        vi.mocked(sdk.threads.send).mockImplementationOnce(async () => {
+          await submission.promise;
+          return { ok: true, delivery: "sent" };
+        });
+      } else {
+        vi.mocked(sdk.threads.queuedMessages.create).mockImplementationOnce(
+          async () => {
+            await submission.promise;
+            return makeQueuedMessage();
+          },
+        );
+      }
+      const useSubmission =
+        kind === "send" ? useSendThreadMessage : useCreateThreadQueuedMessage;
+      const sendRequest =
+        kind === "send" ? sdk.threads.send : sdk.threads.queuedMessages.create;
+      const first = renderHook(() => useSubmission("thread-1"), { wrapper });
       const request = {
         id: "thread-1",
+        mode: "auto" as const,
         input: [
           { type: "text" as const, text: "Keep this draft", mentions: [] },
         ],
@@ -497,32 +515,19 @@ describe("thread runtime mutations", () => {
       act(() => {
         void first.result.current.mutateAsync(request).catch(() => undefined);
       });
-      await waitFor(() =>
-        expect(sdk.threads.queuedMessages.create).toHaveBeenCalledTimes(1),
-      );
+      await waitFor(() => expect(sendRequest).toHaveBeenCalledTimes(1));
       first.unmount();
 
-      const reopened = renderHook(
-        () => useCreateThreadQueuedMessage("thread-1"),
-        {
-          wrapper,
-        },
-      );
-      const unrelated = renderHook(
-        () => useCreateThreadQueuedMessage("thread-2"),
-        {
-          wrapper,
-        },
-      );
+      const reopened = renderHook(() => useSubmission("thread-1"), { wrapper });
+      const unrelated = renderHook(() => useSubmission("thread-2"), {
+        wrapper,
+      });
       expect(reopened.result.current.isPending).toBe(true);
       expect(unrelated.result.current.isPending).toBe(false);
 
       await act(async () => {
-        if (outcome === "accepted") {
-          submission.resolve(makeQueuedMessage());
-        } else {
-          submission.reject(new TypeError("Failed to fetch"));
-        }
+        if (outcome === "accepted") submission.resolve();
+        else submission.reject(new TypeError("Failed to fetch"));
       });
       await waitFor(() =>
         expect(reopened.result.current.isPending).toBe(false),
@@ -530,7 +535,7 @@ describe("thread runtime mutations", () => {
       await act(async () => {
         await reopened.result.current.mutateAsync(request);
       });
-      expect(sdk.threads.queuedMessages.create).toHaveBeenCalledTimes(2);
+      expect(sendRequest).toHaveBeenCalledTimes(2);
     },
   );
 
