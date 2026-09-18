@@ -1,3 +1,4 @@
+import { createNewThreadDraft } from "@/lib/drafts/resource-runtime";
 import type { ComponentProps } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -55,10 +56,13 @@ export function BuiltInSidebarNavigation({
         />
       ),
       disabled: onNewChat === undefined,
-      splitContent: { kind: "new-thread" },
+      splitContent: () => ({
+        kind: "new-thread",
+        draftId: createNewThreadDraft(),
+      }),
       onActivate: (event: SidebarNavActivationModifiers) => {
-        if (event.metaKey || event.ctrlKey) {
-          newThreadSplit?.openInSplit();
+        if (newThreadSplit && (event.metaKey || event.ctrlKey)) {
+          newThreadSplit.openInSplit();
           return;
         }
         onNewChat?.();

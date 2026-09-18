@@ -130,7 +130,7 @@ export interface BuiltInSidebarNavEntry {
   icon: ReactNode;
   content: ReactNode;
   disabled?: boolean;
-  splitContent?: PaneContent;
+  splitContent?: PaneContent | (() => PaneContent);
   onActivate: (event: SidebarNavActivationModifiers) => void;
 }
 
@@ -617,14 +617,15 @@ function SidebarNavigationOverflowItem({
 }) {
   const splitActions = usePaneContentSplitActions();
   const [isActionsOpen, setIsActionsOpen] = useState(false);
-  const content: PaneContent | undefined = isPluginSidebarNavRow(row)
-    ? {
-        kind: "plugin-panel",
-        pluginId: row.chrome.pluginId,
-        panelPath: row.chrome.path,
-        subPath: "",
-      }
-    : row.splitContent;
+  const content: PaneContent | (() => PaneContent) | undefined =
+    isPluginSidebarNavRow(row)
+      ? {
+          kind: "plugin-panel",
+          pluginId: row.chrome.pluginId,
+          panelPath: row.chrome.path,
+          subPath: "",
+        }
+      : row.splitContent;
   const disabled = !isPluginSidebarNavRow(row) && row.disabled;
   const canSplit =
     splitEnabled &&

@@ -972,7 +972,7 @@ function StandalonePaneContent({
     return <ThreadDetailView surface="page" />;
   }
   if (content.kind === "new-thread") {
-    return <RootComposeView />;
+    return <RootComposeView draftId={content.draftId} />;
   }
   if (content.kind === "plugin-detail") {
     return <PluginDetailPaneView pluginId={content.pluginId} />;
@@ -1176,7 +1176,7 @@ function NonThreadPaneContent({
         )}
       >
         {content.kind === "new-thread" ? (
-          <RootComposeView />
+          <RootComposeView draftId={content.draftId} />
         ) : content.kind === "plugin-detail" ? (
           <PluginDetailPaneView pluginId={content.pluginId} />
         ) : (
@@ -1466,7 +1466,13 @@ function PaneStaleWatcher({ threadId, onStale }: PaneStaleWatcherProps) {
     ) {
       onStaleRef.current();
     }
-  }, [isConfirmedArchived, isDeleted, isGone, isUnarchived, unarchivesInFlight]);
+  }, [
+    isConfirmedArchived,
+    isDeleted,
+    isGone,
+    isUnarchived,
+    unarchivesInFlight,
+  ]);
 
   return null;
 }

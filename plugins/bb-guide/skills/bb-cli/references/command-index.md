@@ -35,6 +35,7 @@ This index lists every command path that the core CLI registers. Read the task-s
 - `bb thread draft list`
 - `bb thread draft show`
 - `bb thread draft get`
+- `bb thread draft open`
 - `bb thread draft update`
 - `bb thread draft delete`
 - `bb thread draft submit`

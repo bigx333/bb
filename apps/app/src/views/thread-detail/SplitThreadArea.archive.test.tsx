@@ -195,6 +195,7 @@ afterEach(() => {
   cleanup();
   pendingArchive = null;
   window.localStorage.clear();
+  window.sessionStorage.clear();
 });
 
 describe("SplitThreadArea archive pruning", () => {
@@ -205,7 +206,9 @@ describe("SplitThreadArea archive pruning", () => {
 
     fireEvent.click(screen.getByTestId("unarchive"));
     await waitFor(() => expect(archivedAtOf(queryClient, "thr-b")).toBeNull());
-    await act(async () => pendingArchive!.reject(new Error("unarchive failed")));
+    await act(async () =>
+      pendingArchive!.reject(new Error("unarchive failed")),
+    );
 
     await waitFor(() =>
       expect(archivedAtOf(queryClient, "thr-b")).toBe(ARCHIVED_AT),

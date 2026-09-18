@@ -1,3 +1,4 @@
+import { LegacyDraftImport } from "@/components/drafts/LegacyDraftImport";
 import { type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -110,12 +111,17 @@ import {
   shouldRestoreIOSViewportOnKeyboardDismissal,
   useMobileVisualViewportHeight,
 } from "./useMobileVisualViewportHeight";
+import { createNewThreadDraft } from "@/lib/drafts/resource-runtime";
+import { openDraftInSplit } from "@/lib/split-layout/openDraftInSplit";
 import { wsManager } from "@/lib/ws";
 import { splitLayoutAtom } from "@/lib/split-layout/atoms";
 import { findPaneByThread } from "@/lib/split-layout";
 import { applyThreadOpenToLayout } from "@/views/thread-detail/splitThreadNavigation";
 import { useAppSettingsRouteMemory } from "@/hooks/useAppSettingsRouteMemory";
-import { useSetRootComposeProjectId } from "@/lib/root-compose-selection";
+import {
+  useRootComposeProjectId,
+  useSetRootComposeProjectId,
+} from "@/lib/root-compose-selection";
 import { BackToAppCommandHandler } from "./BackToAppCommandHandler";
 
 const SIDEBAR_WIDTH_KEY = "bb.sidebar.width";
@@ -419,6 +425,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { appRoutePath, settingsRoutePath, toolsBackRoutePath } =
     useAppSettingsRouteMemory();
   const setRootComposeProjectId = useSetRootComposeProjectId();
+  const [rootComposeProjectId] = useRootComposeProjectId();
   useEffect(
     () =>
       wsManager.onThreadOpen((signal) => {
@@ -443,12 +450,33 @@ export function AppLayout({ children }: AppLayoutProps) {
       }),
     [isCompactViewport, navigate, store],
   );
+  useEffect(
+    () =>
+      wsManager.onDraftOpen((signal) =>
+        openDraftInSplit({
+          store,
+          navigate,
+          draftId: signal.draftId,
+          split: signal.split,
+          isCompact: isCompactViewport,
+        }),
+      ),
+    [isCompactViewport, navigate, store],
+  );
   useAppCommandHandler("thread.new", () => {
     if (projectId !== undefined) {
       setRootComposeProjectId(projectId);
     }
-    void navigate(getRootComposeRoutePath(), {
-      state: { focusPrompt: true },
+    const draftId = createNewThreadDraft({
+      projectId: projectId ?? rootComposeProjectId,
+    });
+    openDraftInSplit({
+      store,
+      navigate: (route, options) =>
+        navigate(route, { ...options, state: { focusPrompt: true } }),
+      draftId,
+      split: "replace",
+      isCompact: isCompactViewport,
     });
     return true;
   });
@@ -749,6 +777,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   return (
     <TooltipProvider delayDuration={300} disableHoverableContent>
       <ProjectActionsProvider>
+        <LegacyDraftImport />
         <ThreadTitleMentionResourcesProvider {...titleMentionResources}>
           <ThreadActionsProvider>
             <SidebarStateBridge>

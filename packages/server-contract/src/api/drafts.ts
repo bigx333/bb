@@ -16,7 +16,7 @@ import {
   projectDefaultEnvironmentSchema,
   reuseEnvironmentSchema,
 } from "./shared.js";
-import { createThreadRequestSchema } from "./threads.js";
+import { createThreadRequestSchema, threadOpenSplitSchema } from "./threads.js";
 
 export const draftIdSchema = z.string().regex(/^drf_[A-Za-z0-9_-]{8,128}$/);
 
@@ -146,3 +146,23 @@ export const draftSubmitResponseSchema = z.object({
   draft: draftSchema.nullable(),
 });
 export type DraftSubmitResponse = z.infer<typeof draftSubmitResponseSchema>;
+
+export const draftOpenRequestSchema = z
+  .object({
+    split: threadOpenSplitSchema.optional(),
+  })
+  .strict();
+export type DraftOpenRequest = z.infer<typeof draftOpenRequestSchema>;
+
+export const draftOpenResponseSchema = z.object({
+  delivered: z.number().int().nonnegative(),
+});
+export type DraftOpenResponse = z.infer<typeof draftOpenResponseSchema>;
+
+export const draftOpenSignalLenientSchema = z.object({
+  type: z.literal("draft-open"),
+  draftId: draftIdSchema,
+  split: threadOpenSplitSchema,
+});
+export const draftOpenSignalSchema = draftOpenSignalLenientSchema.strict();
+export type DraftOpenSignal = z.infer<typeof draftOpenSignalSchema>;

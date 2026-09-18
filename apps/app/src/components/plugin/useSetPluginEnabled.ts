@@ -1,3 +1,4 @@
+import { createNewThreadDraft } from "@/lib/drafts/resource-runtime";
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { flushSync } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -40,7 +41,10 @@ export function useSetPluginEnabled() {
             continue;
           next =
             listPanes(next.root).length === 1
-              ? replacePaneContent(next, pane.paneId, { kind: "new-thread" })
+              ? replacePaneContent(next, pane.paneId, {
+                  kind: "new-thread",
+                  draftId: createNewThreadDraft(),
+                })
               : removePane(next, pane.paneId);
         }
       }

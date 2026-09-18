@@ -442,7 +442,10 @@ const pluginGuideContent: PaneContent = {
   subPath: "",
 };
 
-const newThreadContent: PaneContent = { kind: "new-thread" };
+const newThreadContent: PaneContent = {
+  kind: "new-thread",
+  draftId: "drf_navigation_test",
+};
 
 function pluginContent(panelPath: string): PaneContent {
   return {
@@ -1759,6 +1762,26 @@ describe("SplitThreadArea", () => {
           (pane) => pane.getAttribute("data-window-top-left-owner") === "true",
         ),
     ).toEqual([screen.getByTestId("pane-thr-a")]);
+  });
+
+  it("retains an already archived thread when it replaces an active thread in the same pane", async () => {
+    threadStore.set("thr-c", { archivedAt: 123, deletedAt: null });
+    const store = renderSplitArea({
+      path: threadPath("thr-b"),
+      layout: twoPaneLayout("pane-2"),
+      externalTo: threadPath("thr-c"),
+    });
+    expect(await screen.findByTestId("pane-thr-b")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("external-nav"));
+
+    expect(await screen.findByTestId("pane-thr-c")).toBeTruthy();
+    expect(screen.getByTestId("pane-thr-a")).toBeTruthy();
+    expect(screen.queryByTestId("pane-thr-b")).toBeNull();
+    expect(store.get(splitLayoutAtom)?.focusedPaneId).toBe("pane-2");
+    expect(screen.getByTestId("location").textContent).toBe(
+      threadPath("thr-c"),
+    );
   });
 
   it("focuses an already-open pane instead of duplicating on external navigation", async () => {

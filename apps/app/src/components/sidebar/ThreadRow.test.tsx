@@ -49,7 +49,10 @@ import {
   setPluginSlotRegistrations,
 } from "@/lib/plugin-slots";
 import { splitLayoutAtom } from "@/lib/split-layout/atoms";
-import { SPLIT_LAYOUT_STORAGE_KEY } from "@/lib/split-layout/persistence";
+import {
+  LEGACY_SPLIT_LAYOUT_STORAGE_KEY,
+  SPLIT_LAYOUT_STORAGE_KEY,
+} from "@/lib/split-layout/persistence";
 import { NO_COLLAPSED_CHILD_ACTIVITY } from "@bb/client-core";
 import { sdk } from "@/lib/sdk";
 import { makeThreadListEntry as makeThreadListEntryFixture } from "@bb/test-helpers/domain-fixtures";
@@ -199,7 +202,7 @@ function renderSplitThreadRow({
         {
           type: "pane",
           paneId: "pane-compose",
-          content: { kind: "new-thread" },
+          content: { kind: "new-thread", draftId: "drf_sidebarfixture" },
         },
       ],
     },
@@ -225,7 +228,9 @@ afterEach(() => {
   removePluginSlotRegistrations("icon-probe");
   expect(vi.isMockFunction(sdk.threads.resolveMentions)).toBe(false);
   window.localStorage.removeItem(SPLIT_LAYOUT_STORAGE_KEY);
+  window.localStorage.removeItem(LEGACY_SPLIT_LAYOUT_STORAGE_KEY);
   window.sessionStorage.removeItem(SPLIT_LAYOUT_STORAGE_KEY);
+  window.sessionStorage.removeItem(LEGACY_SPLIT_LAYOUT_STORAGE_KEY);
 });
 
 describe("ThreadRow", () => {

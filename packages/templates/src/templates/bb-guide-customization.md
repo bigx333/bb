@@ -309,6 +309,14 @@ are visible by default. Example:
   bb settings ui set sidebar.hiddenFooterItems '["plugin:provider-usage/usage"]'
   bb settings ui reset sidebar.hiddenFooterItems
 
+The built-in sidebar lifecycle filter selects Active, Drafts, and Archived.
+`sidebar.lifecycleFilter` accepts a unique, nonempty JSON list containing
+`active`, `drafts`, and/or `archived`; it defaults to `["active"]`. For example:
+`bb settings ui set sidebar.lifecycleFilter '["active","drafts"]'`.
+Drafts appear before active threads; Archived loads a paginated trailing group
+only when selected. `bb settings ui reset sidebar.lifecycleFilter` restores
+Active. Plugin-owned thread-list replacements keep their own controls.
+
 Client-local UI preferences
 
 Some Settings values live only in the current browser/client. Sidebar width
