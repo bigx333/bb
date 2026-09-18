@@ -124,7 +124,7 @@ describe("useSidebarNavigation", () => {
     await act(async () => {
       await result.current.refetch();
     });
-    expect(result.current.isError).toBe(false);
+    await waitFor(() => expect(result.current.isError).toBe(false));
     expect(result.current.data).toEqual(BOOTSTRAP);
   });
 
