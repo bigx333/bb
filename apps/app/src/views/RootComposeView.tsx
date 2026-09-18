@@ -2334,6 +2334,7 @@ function RootComposeSurface({
     id: `root-compose-prompt-${draftId}`,
     autoFocus: isFocusedPane && !isProviderCliVersionBlocked,
     allowSoftKeyboardAutoFocus: isFocusedPane && isCompactViewport,
+    mentionMenuPlacement: isCompactHomeLayout ? "top" : "bottom",
     banner: (
       <>
         {resourceNotice}
