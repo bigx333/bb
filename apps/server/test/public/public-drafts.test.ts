@@ -498,16 +498,23 @@ describe("durable draft resources", () => {
       const content = readyContent(harness);
       const draft = await create(harness, {
         ...content,
-        options: { ...content.options, sendAt: null },
+        options: {
+          ...content.options,
+          sendAt: null,
+          pluginSubmission: { pluginId: "draft-test", data: { saved: true } },
+        },
       });
       const registry: { [K in PluginHookName]: PluginHookRegistration<K>[] } = {
         "message.dispatch": [
           {
             pluginId: "draft-test",
-            handler: () => ({
-              action: "reject",
-              message: "Temporarily blocked",
-            }),
+            handler: (context) => {
+              expect(context.experimental_submission).toEqual({
+                pluginId: "draft-test",
+                data: { saved: true },
+              });
+              return { action: "reject", message: "Temporarily blocked" };
+            },
           },
         ],
       };

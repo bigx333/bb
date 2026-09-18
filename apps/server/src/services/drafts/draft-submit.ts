@@ -15,8 +15,8 @@ import {
   createThreadRequestSchema,
   type Draft,
   type DraftSubmitResponse,
-  type ThreadCreateOrigin,
 } from "@bb/server-contract";
+import type { ThreadCreateOrigin } from "@bb/domain";
 import { ApiError } from "../../errors.js";
 import type { AppDeps } from "../../types.js";
 import { requestThreadStorageDeletion } from "../threads/thread-lifecycle.js";
@@ -127,6 +127,7 @@ async function performSubmission(
     sourceSeqEnd: options.sourceSeqEnd ?? undefined,
     originKind: options.originKind,
     sendAt: options.sendAt ?? undefined,
+    pluginSubmission: options.pluginSubmission ?? undefined,
   });
   if (!request.success) {
     throw new ApiError(

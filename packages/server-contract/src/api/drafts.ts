@@ -1,4 +1,5 @@
 import {
+  threadCreateOriginSchema,
   environmentMachineSelectionSchema,
   jsonValueSchema,
   permissionModeInputSchema,
@@ -15,7 +16,7 @@ import {
   projectDefaultEnvironmentSchema,
   reuseEnvironmentSchema,
 } from "./shared.js";
-import { threadCreateOriginSchema } from "./threads.js";
+import { createThreadRequestSchema } from "./threads.js";
 
 export const draftIdSchema = z.string().regex(/^drf_[A-Za-z0-9_-]{8,128}$/);
 
@@ -54,6 +55,9 @@ export const draftOptionsSchema = z
     sourceSeqEnd: z.number().int().nonnegative().nullable().default(null),
     originKind: threadOriginKindSchema.nullable().default(null),
     sendAt: z.number().int().nonnegative().nullable().default(null),
+    pluginSubmission: createThreadRequestSchema.shape.pluginSubmission
+      .nullable()
+      .default(null),
   })
   .strict();
 export type DraftOptions = z.infer<typeof draftOptionsSchema>;
