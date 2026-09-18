@@ -35,6 +35,77 @@ function reconstructCompletedItemHistory(metadata: string, ownerData: string) {
   };
 }
 
+interface ReconstructionEntry {
+  metadata: string;
+  ownerData: string;
+  history: ReturnType<typeof reconstructCompletedItemHistory>;
+  chars: number;
+  records: number;
+}
+
+interface ReconstructionCache {
+  entries: Map<string, ReconstructionEntry>;
+  chars: number;
+  records: number;
+}
+
+const reconstructionCaches = new WeakMap<
+  DbQueryConnection,
+  ReconstructionCache
+>();
+const RECONSTRUCTION_CACHE_MAX_RECORDS = 10_000;
+const RECONSTRUCTION_CACHE_MAX_CHARS = 8_000_000;
+
+function reconstructCached(
+  db: DbQueryConnection,
+  id: string,
+  metadata: string,
+  ownerData: string,
+) {
+  let cache = reconstructionCaches.get(db);
+  if (cache === undefined) {
+    cache = { entries: new Map(), chars: 0, records: 0 };
+    reconstructionCaches.set(db, cache);
+  }
+  const previous = cache.entries.get(id);
+  if (previous !== undefined) {
+    cache.entries.delete(id);
+    cache.chars -= previous.chars;
+    cache.records -= previous.records;
+    if (previous.metadata === metadata && previous.ownerData === ownerData) {
+      cache.entries.set(id, previous);
+      cache.chars += previous.chars;
+      cache.records += previous.records;
+      return previous.history;
+    }
+  }
+  const history = reconstructCompletedItemHistory(metadata, ownerData);
+  const chars =
+    metadata.length +
+    ownerData.length +
+    history.records.reduce((sum, record) => sum + record.data.length, 0);
+  const records = history.records.length + 1;
+  if (
+    chars > RECONSTRUCTION_CACHE_MAX_CHARS ||
+    records > RECONSTRUCTION_CACHE_MAX_RECORDS
+  )
+    return history;
+  while (
+    cache.records + records > RECONSTRUCTION_CACHE_MAX_RECORDS ||
+    cache.chars + chars > RECONSTRUCTION_CACHE_MAX_CHARS
+  ) {
+    const oldest = cache.entries.entries().next().value;
+    if (oldest === undefined) break;
+    cache.entries.delete(oldest[0]);
+    cache.chars -= oldest[1].chars;
+    cache.records -= oldest[1].records;
+  }
+  cache.entries.set(id, { metadata, ownerData, history, chars, records });
+  cache.chars += chars;
+  cache.records += records;
+  return history;
+}
+
 function expandSelectedCompletedItemRowsInternal(
   db: DbQueryConnection,
   rows: readonly StoredEventRow[],
@@ -77,13 +148,17 @@ function expandSelectedCompletedItemRowsInternal(
   }
   const expanded: ProjectionStoredEventRow[] = [];
   for (const selectedRow of rows) {
+    const metadata = histories.get(selectedRow.id);
+    if (metadata === undefined && includeParsedData) {
+      if (selectedRow.sequence <= throughSequence) expanded.push(selectedRow);
+      continue;
+    }
     const { completedItemHistory: _history, ...row } = selectedRow;
-    const metadata = histories.get(row.id);
     if (metadata === undefined) {
       if (row.sequence <= throughSequence) expanded.push(row);
       continue;
     }
-    const history = reconstructCompletedItemHistory(metadata, row.data);
+    const history = reconstructCached(db, row.id, metadata, row.data);
     if (history.sequence <= throughSequence)
       expanded.push({
         ...row,

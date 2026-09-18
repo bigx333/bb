@@ -144,6 +144,138 @@ describe("completed items at first lifecycle position", () => {
     }
   });
 
+  it("reuses identical history while applying each snapshot and row scope", () => {
+    const f = setup();
+    try {
+      f.advance();
+      const owner = listStoredTimelineTurnEventRows(f.db, {
+        threadId: f.thread.id,
+        turnIds: ["turn"],
+        sequenceStart: 0,
+        maxInlineOutputChars: 8000,
+      }).find((row) => row.completedItemHistory != null)!;
+      const full = expandSelectedCompletedItemRowsForProjection(f.db, [owner]);
+      const again = expandSelectedCompletedItemRowsForProjection(f.db, [
+        { ...owner },
+      ]);
+      expect(again).toEqual(full);
+      expect(again[0]!.parsedData).toBe(full[0]!.parsedData);
+      const prefix = expandSelectedCompletedItemRowsForProjection(
+        f.db,
+        [owner],
+        3,
+      );
+      expect(prefix).toEqual(full.filter((row) => row.sequence <= 3));
+      const scoped = expandSelectedCompletedItemRowsForProjection(f.db, [
+        {
+          ...owner,
+          providerThreadId: "changed-provider",
+          parentToolCallId: "changed-parent",
+        },
+      ]);
+      expect(
+        scoped.every(
+          (row) =>
+            row.providerThreadId === "changed-provider" &&
+            row.parentToolCallId === "changed-parent",
+        ),
+      ).toBe(true);
+      expect(scoped.map((row) => row.data)).toEqual(
+        full.map((row) => row.data),
+      );
+    } finally {
+      f.db.$client.close();
+    }
+  });
+
+  it.each(["characters", "records"] as const)(
+    "evicts reconstructed history at its %s bound",
+    (bound) => {
+      const f = setup();
+      try {
+        f.advance();
+        const owner = listStoredTimelineTurnEventRows(f.db, {
+          threadId: f.thread.id,
+          turnIds: ["turn"],
+          sequenceStart: 0,
+          maxInlineOutputChars: 8000,
+        }).find((row) => row.completedItemHistory != null)!;
+        const first = expandSelectedCompletedItemRowsForProjection(f.db, [
+          owner,
+        ])[0]!.parsedData;
+        const copies = bound === "characters" ? 500 : 5000;
+        const data =
+          bound === "characters"
+            ? JSON.stringify({
+                item: {
+                  id: "message",
+                  type: "agentMessage",
+                  text: "x".repeat(20_000),
+                },
+              })
+            : owner.data;
+        let last = owner;
+        let lastPayload = first;
+        for (let index = 0; index < copies; index++) {
+          last = { ...owner, id: `cache-owner-${index}`, data };
+          lastPayload = expandSelectedCompletedItemRowsForProjection(f.db, [
+            last,
+          ])[0]!.parsedData;
+        }
+        expect(
+          expandSelectedCompletedItemRowsForProjection(f.db, [last])[0]!
+            .parsedData,
+        ).toBe(lastPayload);
+        expect(
+          expandSelectedCompletedItemRowsForProjection(f.db, [owner])[0]!
+            .parsedData,
+        ).not.toBe(first);
+      } finally {
+        f.db.$client.close();
+      }
+    },
+  );
+
+  it("does not retain an oversized reconstruction or evict a smaller one for it", () => {
+    const f = setup();
+    try {
+      f.advance();
+      const owner = listStoredTimelineTurnEventRows(f.db, {
+        threadId: f.thread.id,
+        turnIds: ["turn"],
+        sequenceStart: 0,
+        maxInlineOutputChars: 8000,
+      }).find((row) => row.completedItemHistory != null)!;
+      const first = expandSelectedCompletedItemRowsForProjection(f.db, [
+        owner,
+      ])[0]!.parsedData;
+      const oversized = {
+        ...owner,
+        id: "oversized",
+        data: JSON.stringify({
+          item: {
+            id: "message",
+            type: "agentMessage",
+            text: "x".repeat(8_000_001),
+          },
+        }),
+      };
+      const big = expandSelectedCompletedItemRowsForProjection(f.db, [
+        oversized,
+      ])[0]!.parsedData;
+      expect(
+        expandSelectedCompletedItemRowsForProjection(f.db, [oversized])[0]!
+          .parsedData,
+      ).not.toBe(big);
+      expect(
+        expandSelectedCompletedItemRowsForProjection(f.db, [owner])[0]!
+          .parsedData,
+      ).toBe(first);
+    } finally {
+      f.db.$client.close();
+    }
+  });
+
   it("charges the timeline budget for records inside a combined item", () => {
     const f = setup();
     try {
