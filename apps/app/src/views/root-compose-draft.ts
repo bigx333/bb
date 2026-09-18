@@ -64,8 +64,9 @@ export function rootDraftSubmissionContent(
               machine: request.environment.machine ?? null,
             }
           : request.environment,
-      sendAt: request.sendAt ?? null,
-      pluginSubmission: request.pluginSubmission ?? null,
+      sendAt: request.sendAt ?? content.options.sendAt,
+      pluginSubmission:
+        request.pluginSubmission ?? content.options.pluginSubmission,
     },
   };
 }

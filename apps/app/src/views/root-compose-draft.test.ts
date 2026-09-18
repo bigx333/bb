@@ -183,6 +183,8 @@ describe("root draft content", () => {
         sourceSeqEnd: 12,
         originKind: "fork",
         title: "Saved title",
+        sendAt: 2000,
+        pluginSubmission: { pluginId: "draft-test", data: { saved: true } },
       },
     });
     const request: NewThreadComposerSubmission = {
@@ -207,6 +209,13 @@ describe("root draft content", () => {
       title: "Saved title",
       model: "model_selected",
       sendAt: 1000,
+    });
+    const { sendAt: _sendAt, ...immediateComposerRequest } = request;
+    expect(
+      rootDraftSubmissionContent(content, immediateComposerRequest).options,
+    ).toMatchObject({
+      sendAt: 2000,
+      pluginSubmission: { pluginId: "draft-test", data: { saved: true } },
     });
   });
 });
