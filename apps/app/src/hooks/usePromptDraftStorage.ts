@@ -197,10 +197,12 @@ function writePromptDraft(
 ): void {
   if (!storageKey || typeof window === "undefined") return;
 
+  const cachedEntry = promptDraftCache.get(storageKey);
   const hadHandoff =
-    promptDraftCache.get(storageKey)?.submissionHandoffId !== undefined ||
-    readSubmissionHandoffId(readStoredPromptDraftValue(storageKey)) !==
-      undefined;
+    (cachedEntry
+      ? cachedEntry.submissionHandoffId
+      : readSubmissionHandoffId(readStoredPromptDraftValue(storageKey))) !==
+    undefined;
   promptDraftCache.set(storageKey, {
     rawValue: null,
     draft: isPromptDraftEmpty(value) ? EMPTY_PROMPT_DRAFT : value,

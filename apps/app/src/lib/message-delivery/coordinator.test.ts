@@ -111,14 +111,32 @@ it("aborts a hung request and retries its same ID before delivering later work",
     .fn<MessageDeliveryOptions["deliver"]>()
     .mockImplementationOnce(() => new Promise(() => undefined))
     .mockResolvedValue(accepted);
-  stop = coordinator.startMessageDelivery(options({ deliver }));
+  const classifyFailure = vi.fn<MessageDeliveryOptions["classifyFailure"]>(
+    (error) => ({
+      kind: "unknown",
+      message: error instanceof Error ? error.message : "Disconnected",
+    }),
+  );
+  stop = coordinator.startMessageDelivery(
+    options({ deliver, classifyFailure }),
+  );
   await vi.waitFor(() => expect(deliver).toHaveBeenCalledTimes(1));
   const signal = deliver.mock.calls[0]?.[1];
   await vi.advanceTimersByTimeAsync(30_000);
-  await vi.waitFor(() =>
-    expect(store.getSubmissions()[0]?.error).toBe("Message delivery timed out"),
-  );
   expect(signal?.aborted).toBe(true);
+  expect(signal?.reason).toMatchObject({
+    name: "TimeoutError",
+    message: "Message delivery timed out",
+  });
+  await vi.waitFor(() =>
+    expect(classifyFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "TimeoutError",
+        message: "Message delivery timed out",
+      }),
+      expect.objectContaining({ clientSubmissionId: first.clientSubmissionId }),
+    ),
+  );
   await vi.advanceTimersByTimeAsync(1_100);
   await vi.waitFor(() => expect(store.getSubmissions()).toEqual([]));
   expect(deliver.mock.calls.map(([entry]) => entry.clientSubmissionId)).toEqual(

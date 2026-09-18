@@ -21,7 +21,16 @@ type DurableRequest =
 export function isDurableMessageInput(input: readonly PromptInput[]): boolean {
   return (
     !isStandaloneBuiltinClearCommand(input) &&
-    !isStandaloneBuiltinCompactCommand(input)
+    !isStandaloneBuiltinCompactCommand(input) &&
+    !input.some(
+      (block) =>
+        block.type === "text" &&
+        block.mentions.some(
+          (mention) =>
+            mention.resource.kind === "command" &&
+            mention.resource.source === "command",
+        ),
+    )
   );
 }
 

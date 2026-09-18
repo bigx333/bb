@@ -345,7 +345,11 @@ describe("durable submission acceptance", () => {
         harness.db.$client.exec(
           `CREATE TRIGGER reject_submission BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT, 'admission failed'); END`,
         );
-        await expect(submit()).rejects.toThrow("admission failed");
+        await expect(submit()).rejects.toMatchObject(
+          operation === "send"
+            ? { cause: { message: "admission failed" } }
+            : { message: "admission failed" },
+        );
         expect(
           harness.db.select().from(threadSubmissionReceipts).all(),
         ).toHaveLength(0);

@@ -854,6 +854,17 @@ function rewindEnvironmentRowFactsMigration(db: DbConnection): void {
 }
 
 function rewindMachineProvidersMigration(db: DbConnection): void {
+  db.$client.exec("DROP TABLE IF EXISTS thread_submission_receipts");
+  if (
+    db.$client
+      .prepare<[], TableInfoRow>("PRAGMA table_info(queued_thread_messages)")
+      .all()
+      .some((column) => column.name === "client_submission_id")
+  ) {
+    db.$client.exec(
+      "ALTER TABLE queued_thread_messages DROP COLUMN client_submission_id",
+    );
+  }
   db.$client.exec("DROP TABLE IF EXISTS thread_pruning_cursors");
   db.$client.exec("DROP TABLE IF EXISTS project_attachment_threads");
   db.$client.exec("DROP TABLE IF EXISTS project_attachments");

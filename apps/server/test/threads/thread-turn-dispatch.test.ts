@@ -103,7 +103,12 @@ it("replays the durable request accepted through environment reprovisioning", as
     };
     const execution = await buildExecutionOptions(
       harness.deps,
-      {},
+      {
+        model: "gpt-5",
+        reasoningLevel: "medium",
+        serviceTier: "default",
+        permissionMode: "full",
+      },
       { threadId: thread.id },
     );
     const submit = () =>

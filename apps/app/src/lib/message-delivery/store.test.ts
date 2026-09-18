@@ -183,7 +183,7 @@ it("skips retained rejection and corrects it with a new ID at the delivery tail"
     threadId: first.threadId,
     id: first.id,
     expectedUpdatedAt: rejected.updatedAt,
-    input: [{ type: "text", text: "Corrected" }],
+    input: [{ type: "text", text: "Corrected", mentions: [] }],
   });
   await store.refreshSubmissions();
   const corrected = store
@@ -208,19 +208,19 @@ it("pauses delivery while an inline edit owns the claim and fences an expired ed
     threadId: entry.threadId,
     id: entry.id,
     expectedUpdatedAt: entry.updatedAt,
-    input: [{ type: "text", text: "Updated" }],
+    input: [{ type: "text", text: "Updated", mentions: [] }],
     editToken: edit.token,
   });
   const delivering = await claim("sender");
   expect(delivering.entry.request.input).toEqual([
-    { type: "text", text: "Updated" },
+    { type: "text", text: "Updated", mentions: [] },
   ]);
   await expect(
     store.editSubmission({
       threadId: entry.threadId,
       id: entry.id,
       expectedUpdatedAt: entry.updatedAt,
-      input: [{ type: "text", text: "Stale edit" }],
+      input: [{ type: "text", text: "Stale edit", mentions: [] }],
       editToken: edit.token,
     }),
   ).rejects.toThrow("already being delivered");
@@ -285,7 +285,7 @@ it("fences an editor after expiry lets a delivery owner claim the saved payload"
       threadId: original.threadId,
       id: original.id,
       expectedUpdatedAt: original.updatedAt,
-      input: [{ type: "text", text: "Unsaved new wording" }],
+      input: [{ type: "text", text: "Unsaved new wording", mentions: [] }],
       editToken: edit.token,
     }),
   ).rejects.toThrow("already being delivered");
@@ -310,7 +310,7 @@ it("leaves a rejected original untouched when its correction transaction fails",
       threadId: original.threadId,
       id: original.id,
       expectedUpdatedAt: rejected.updatedAt,
-      input: [{ type: "text", text: "Corrected wording" }],
+      input: [{ type: "text", text: "Corrected wording", mentions: [] }],
     }),
   ).rejects.toThrow("Quota exceeded");
   put.mockRestore();

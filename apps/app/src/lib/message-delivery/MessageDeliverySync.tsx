@@ -3,15 +3,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { appToast } from "@/components/ui/app-toast";
 import { useSystemConfig } from "@/hooks/queries/system-queries";
-import {
-  systemConfigQueryKey,
-  threadPromptHistoryQueryKey,
-  threadQueuedMessagesQueryKey,
-  threadTimelineQueryKeyPrefix,
-} from "@/hooks/queries/query-keys";
+import { invalidateSystemConfig } from "@/hooks/cache-owners/system-cache-effects";
 import {
   applyQueuedMessageCreateResult,
   applySendThreadMessageSuccess,
+  refreshAcceptedSubmissionQueries,
 } from "@/hooks/cache-owners/thread-runtime-cache-owner";
 import { BbHttpError, sdk } from "@/lib/sdk";
 import { wsManager } from "@/lib/ws";
@@ -41,7 +37,7 @@ export function MessageDeliverySync() {
     ) => {
       if (expected === received) return;
       deliverySupported = false;
-      void queryClient.invalidateQueries({ queryKey: systemConfigQueryKey() });
+      invalidateSystemConfig({ queryClient });
       const error = new Error(
         "Message delivery paused: the server did not confirm the saved submission ID.",
       );
@@ -96,31 +92,15 @@ export function MessageDeliverySync() {
             transaction: undefined,
           });
         }
-        await queryClient.fetchQuery({
-          queryKey: threadQueuedMessagesQueryKey(entry.threadId),
-          queryFn: () =>
+        await refreshAcceptedSubmissionQueries({
+          queryClient,
+          threadId: entry.threadId,
+          load: () =>
             sdk.threads.queuedMessages.list({
               threadId: entry.threadId,
               signal,
             }),
-          staleTime: 0,
         });
-        await Promise.all([
-          queryClient.refetchQueries(
-            {
-              queryKey: threadTimelineQueryKeyPrefix(entry.threadId),
-              type: "active",
-            },
-            { throwOnError: true, cancelRefetch: false },
-          ),
-          queryClient.refetchQueries(
-            {
-              queryKey: threadPromptHistoryQueryKey(entry.threadId),
-              type: "active",
-            },
-            { throwOnError: true, cancelRefetch: false },
-          ),
-        ]);
       },
       classifyFailure: (error, entry) => {
         const message =

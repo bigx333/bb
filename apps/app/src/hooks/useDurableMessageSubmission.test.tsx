@@ -103,7 +103,27 @@ describe("durable composer submission", () => {
           {
             kind: "queue",
             request: {
-              input: [{ type: "text", text: "/clear", mentions: [] }],
+              input: [
+                {
+                  type: "text",
+                  text: "/clear",
+                  mentions: [
+                    {
+                      start: 0,
+                      end: 6,
+                      resource: {
+                        kind: "command",
+                        trigger: "/",
+                        name: "clear",
+                        source: "command",
+                        origin: "builtin",
+                        label: "clear",
+                        argumentHint: null,
+                      },
+                    },
+                  ],
+                },
+              ],
             },
           },
           draft,

@@ -882,6 +882,28 @@ export function prefetchThreadQueuedMessages({
   });
 }
 
+export async function refreshAcceptedSubmissionQueries({
+  queryClient,
+  threadId,
+  load,
+}: PrefetchThreadQueuedMessagesArgs): Promise<void> {
+  await queryClient.fetchQuery({
+    queryKey: threadQueuedMessagesQueryKey(threadId),
+    queryFn: ({ signal }) => load(signal),
+    staleTime: 0,
+  });
+  await Promise.all([
+    queryClient.refetchQueries(
+      { queryKey: threadTimelineQueryKeyPrefix(threadId), type: "active" },
+      { throwOnError: true, cancelRefetch: false },
+    ),
+    queryClient.refetchQueries(
+      { queryKey: threadPromptHistoryQueryKey(threadId), type: "active" },
+      { throwOnError: true, cancelRefetch: false },
+    ),
+  ]);
+}
+
 export function applyCreateThreadResult({
   queryClient,
   request,

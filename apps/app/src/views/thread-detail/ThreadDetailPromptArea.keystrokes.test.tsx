@@ -29,8 +29,26 @@ import { ThreadDetailPromptArea } from "./ThreadDetailPromptArea";
 
 const mocks = vi.hoisted(() => ({
   sendMessageMutateAsync: vi.fn(),
+  durableEnqueue: vi.fn(),
   shellProbeRenders: vi.fn(),
   updateQueuedMessageMutateAsync: vi.fn(),
+}));
+
+vi.mock("@/hooks/useDurableMessageSubmission", () => ({
+  useDurableMessageSubmission: () => ({
+    enabled: false,
+    connected: true,
+    isSaving: false,
+    enqueue: mocks.durableEnqueue,
+  }),
+  isDurableMessageInput: () => true,
+}));
+
+vi.mock("@/hooks/useQueuedMessageRows", () => ({
+  useQueuedMessageRows: (
+    _threadId: string,
+    messages: readonly ThreadQueuedMessage[],
+  ) => messages,
 }));
 
 vi.mock("react-router-dom", async (importOriginal) => {
