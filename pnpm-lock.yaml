@@ -939,6 +939,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@bb/client-core':
+        specifier: workspace:*
+        version: link:../../packages/client-core
       '@bb/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -1051,9 +1054,6 @@ importers:
       '@bb/agent-runtime':
         specifier: workspace:*
         version: link:../../packages/agent-runtime
-      '@bb/client-core':
-        specifier: workspace:*
-        version: link:../../packages/client-core
       '@bb/scripts':
         specifier: workspace:*
         version: link:../../packages/scripts

@@ -112,6 +112,7 @@ import type {
 } from "@get-bb/plugin-sdk/internal/host-policy";
 import type {
   BbSdk,
+  DraftSubmitArgs,
   ThreadForkArgs,
   ThreadPluginMetadataArgs,
   ThreadPluginMetadataUpdateArgs,
@@ -333,6 +334,19 @@ function withPluginThreadAttribution<
 function wrapSdkForPlugin(sdk: BbSdk, pluginId: string): PluginBbSdk {
   return {
     ...sdk,
+    drafts: {
+      ...sdk.drafts,
+      submit(args: DraftSubmitArgs) {
+        const origin = args.origin ?? "plugin";
+        return sdk.drafts.submit({
+          ...args,
+          origin,
+          ...(origin === "plugin"
+            ? { originPluginId: args.originPluginId ?? pluginId }
+            : {}),
+        });
+      },
+    },
     threads: {
       ...sdk.threads,
       async getPluginMetadata(

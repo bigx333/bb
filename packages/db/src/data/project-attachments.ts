@@ -6,6 +6,7 @@ import {
 } from "@bb/domain";
 import type { DbConnection, DbQueryConnection } from "../connection.js";
 import {
+  drafts,
   projectAttachments,
   projectAttachmentThreads,
   projectAttachmentBackfills,
@@ -149,6 +150,22 @@ export function claimProjectAttachments(
             lt(projectAttachments.createdAt, now - PROJECT_ATTACHMENT_GRACE_MS),
             isNull(projectAttachments.deletionClaimedAt),
             unowned,
+            notExists(
+              tx
+                .select({ id: drafts.id })
+                .from(drafts)
+                .where(
+                  and(
+                    eq(drafts.projectId, projectAttachments.projectId),
+                    isNull(drafts.deletedAt),
+                    isNull(drafts.submittedAt),
+                    sql`EXISTS (
+                      SELECT 1 FROM json_each(${drafts.payloadJson}, '$.prompt.attachments') AS attachment
+                      WHERE json_extract(attachment.value, '$.path') = ${projectAttachments.storedPath}
+                    )`,
+                  ),
+                ),
+            ),
           ),
         )
         .orderBy(asc(projectAttachments.createdAt))

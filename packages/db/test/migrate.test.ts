@@ -722,6 +722,11 @@ function dropMarketplaceStatsColumn(db: DbConnection): void {
   }
 }
 
+function rewindDraftResourcesMigration(db: DbConnection): void {
+  db.$client.exec("DROP TABLE IF EXISTS draft_submission_receipts");
+  db.$client.exec("DROP TABLE IF EXISTS drafts");
+}
+
 /**
  * Undo migration 0110, the dispatch-queue rework.
  *
@@ -750,6 +755,7 @@ function rewindEnvironmentProvisioningMigration(db: DbConnection): void {
       "ALTER TABLE threads DROP COLUMN lifecycle_owner_thread_id",
     );
   }
+  rewindDraftResourcesMigration(db);
   const columns = db.$client
     .prepare<[], TableInfoRow>("PRAGMA table_info(environments)")
     .all();
@@ -868,9 +874,7 @@ function rewindMachineProvidersMigration(db: DbConnection): void {
     "requested_by_thread_id",
   ]) {
     if (!queuedDispatchOrigin.some((column) => column.name === name)) continue;
-    db.$client.exec(
-      `ALTER TABLE queued_thread_messages DROP COLUMN ${name}`,
-    );
+    db.$client.exec(`ALTER TABLE queued_thread_messages DROP COLUMN ${name}`);
   }
   db.$client.exec("DROP TABLE IF EXISTS thread_pruning_cursors");
   db.$client.exec("DROP TABLE IF EXISTS project_attachment_threads");

@@ -2,6 +2,7 @@ import type { QueryKey } from "@tanstack/react-query";
 import type { Environment } from "@bb/domain";
 import type { SystemConfigResponse } from "@bb/server-contract";
 import {
+  allDraftQueryKeyPrefix,
   allEnvironmentDiffFilesQueryKeyPrefix,
   allEnvironmentDiffPatchQueryKeyPrefix,
   allEnvironmentFilePreviewQueryKeyPrefix,
@@ -183,6 +184,7 @@ export function resetModelCatalogsAfterStreamerModeChange({
 
 function getServerReconnectInvalidationQueryKeys(): QueryKey[] {
   return [
+    allDraftQueryKeyPrefix(),
     hostsQueryKey(),
     allHostQueryKeyPrefix(),
     projectsQueryKey(),

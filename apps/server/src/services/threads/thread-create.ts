@@ -5,6 +5,7 @@ import {
   getEnvironment,
   getProjectSourceByHost,
   getThread,
+  failDraftSubmissionReceipt,
 } from "@bb/db";
 import type {
   ProjectExecutionDefaults,
@@ -71,10 +72,15 @@ import {
   getEnvironmentProvider,
   listEnvironmentCompositions,
 } from "../plugins/plugin-environment-provider-registry.js";
+import {
+  createDraftThreadRecord,
+  type DraftSubmissionSource,
+} from "../drafts/draft-thread-record.js";
 
 type ThreadCreateDeps = LoggedPendingInteractionWorkSessionDeps;
 
 interface CreateProvisioningThreadArgs {
+  draftSubmission?: DraftSubmissionSource;
   environmentId: string | null;
   executionDefaults: Parameters<
     typeof buildExecutionOptions
@@ -384,10 +390,15 @@ async function createPendingThreadAndAttemptFirstDispatch(
       sourceThreadId: args.request.sourceThreadId,
     });
   }
-  const thread = createThreadRecord(deps, {
-    request: args.request,
-    environmentId: args.environmentId,
-  });
+  const createRecord = () =>
+    createThreadRecord(deps, {
+      request: args.request,
+      environmentId: args.environmentId,
+    });
+  const thread =
+    args.draftSubmission === undefined
+      ? createRecord()
+      : createDraftThreadRecord(deps, args.draftSubmission, createRecord);
   let execution: Awaited<ReturnType<typeof buildExecutionOptions>>;
   try {
     if (
@@ -472,6 +483,11 @@ async function createPendingThreadAndAttemptFirstDispatch(
           ? getEnvironment(deps.db, deleted.environmentId)
           : null,
       );
+    if (args.draftSubmission !== undefined) {
+      failDraftSubmissionReceipt(deps.db, args.draftSubmission);
+      deps.hub.notifySystem(["drafts-changed"]);
+    }
+
     throw error;
   }
   rememberProjectExecutionDefaultsForCreate(deps, {
@@ -521,6 +537,7 @@ export async function createThreadFromRequest(
   deps: ThreadCreateDeps,
   rawRequestInput: ThreadCreateServiceRequestInput,
   options: {
+    draftSubmission?: DraftSubmissionSource;
     providerInput?: ThreadCreateServiceRequestInput["input"];
     forkSourceEnvironmentId?: string;
   } = {},
@@ -770,6 +787,9 @@ export async function createThreadFromRequest(
   }
 
   const createArgs = {
+    ...(options.draftSubmission !== undefined
+      ? { draftSubmission: options.draftSubmission }
+      : {}),
     environmentId,
     environmentIntent,
     executionDefaults: resolvedExecutionDefaults,
