@@ -3,7 +3,7 @@ import {
   getDraftSubmissionReceipt,
   getStoredDraft,
   getThread,
-  listThreads,
+  listThreadsWithPendingInteractionState,
 } from "@bb/db";
 import {
   draftCreateResponseSchema,
@@ -331,7 +331,9 @@ describe("durable draft resources", () => {
       expect(replay.thread.id).toBe(results[0]?.thread.id);
       expect(replay.draft).toBeNull();
       expect(
-        listThreads(harness.db, { projectId: draft.content.projectId! }),
+        listThreadsWithPendingInteractionState(harness.db, {
+          projectId: draft.content.projectId!,
+        }),
       ).toHaveLength(1);
       expect(
         (await harness.app.request(`/api/v1/drafts/${draft.id}`)).status,
@@ -386,7 +388,9 @@ describe("durable draft resources", () => {
       }
       expect((await submitting).status).toBe(409);
       expect(
-        listThreads(harness.db, { projectId: draft.content.projectId! }),
+        listThreadsWithPendingInteractionState(harness.db, {
+          projectId: draft.content.projectId!,
+        }),
       ).toHaveLength(0);
     });
   });
@@ -476,9 +480,7 @@ describe("durable draft resources", () => {
         expectedRevision: 1,
       });
       expect(response.status).toBe(409);
-      expect(getThread(harness.db, thread.id)?.deletedAt).toEqual(
-        expect.any(Number),
-      );
+      expect(getThread(harness.db, thread.id)).toBeNull();
       expect(getStoredDraft(harness.db, draft.id)?.payloadJson).not.toBeNull();
       expect(
         (
@@ -488,7 +490,9 @@ describe("durable draft resources", () => {
         ).status,
       ).toBe(409);
       expect(
-        listThreads(harness.db, { projectId: draft.content.projectId! }),
+        listThreadsWithPendingInteractionState(harness.db, {
+          projectId: draft.content.projectId!,
+        }),
       ).toHaveLength(0);
     });
   });
@@ -541,7 +545,9 @@ describe("durable draft resources", () => {
       setPluginEnvironmentProviderBridge(undefined);
       expect((await submit()).status).toBe(409);
       expect(
-        listThreads(harness.db, { projectId: draft.content.projectId! }),
+        listThreadsWithPendingInteractionState(harness.db, {
+          projectId: draft.content.projectId!,
+        }),
       ).toHaveLength(0);
       expect(
         (
@@ -559,7 +565,9 @@ describe("durable draft resources", () => {
         ).status,
       ).toBe(200);
       expect(
-        listThreads(harness.db, { projectId: draft.content.projectId! }),
+        listThreadsWithPendingInteractionState(harness.db, {
+          projectId: draft.content.projectId!,
+        }),
       ).toHaveLength(1);
     });
   });
