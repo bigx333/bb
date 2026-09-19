@@ -156,6 +156,7 @@ server.
 - `bb thread timeline`
 - `bb thread output`
 - `bb thread open`
+- `bb thread open --new [--split <placement>]`
 - `bb thread pane`
 - `bb thread section`
 - `bb thread section list`
