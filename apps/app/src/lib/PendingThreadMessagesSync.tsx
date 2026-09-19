@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerConnectionState } from "@/hooks/useServerConnectionState";
 import { useSystemConfig } from "@/hooks/queries/system-queries";
-import { threadQueuedMessagesQueryKey } from "@/hooks/queries/query-keys";
+import { invalidateThreadQueuedMessageListQuery } from "@/hooks/cache-owners/mutation-cache-effects";
 import { BbHttpError, sdk } from "./sdk";
 import { wsManager } from "./ws";
 import {
@@ -53,9 +53,7 @@ function PendingDelivery({ entry }: { entry: PendingThreadMessage }) {
               );
       if (result?.clientSubmissionId !== request.clientSubmissionId)
         throw new Error("Waiting for server confirmation");
-      await queryClient.invalidateQueries({
-        queryKey: threadQueuedMessagesQueryKey(id),
-      });
+      invalidateThreadQueuedMessageListQuery({ queryClient, threadId: id });
       removePendingThreadMessage(entry.row.id);
     },
     onError: (error) => {

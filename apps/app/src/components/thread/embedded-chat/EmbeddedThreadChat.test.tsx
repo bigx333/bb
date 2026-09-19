@@ -302,6 +302,9 @@ vi.mock("@/hooks/queries/system-queries", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useRetainThreadMessage", () => ({
+  useRetainThreadMessage: () => ({ connected: true, retain: () => false }),
+}));
 vi.mock("@/hooks/mutations/thread-runtime-mutations", () => ({
   useCreateThreadQueuedMessage: () => ({
     mutateAsync: mocks.createQueuedMessageMutateAsync,

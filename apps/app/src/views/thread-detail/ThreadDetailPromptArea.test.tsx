@@ -653,6 +653,9 @@ vi.mock("@/hooks/mutations/project-mutations", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useRetainThreadMessage", () => ({
+  useRetainThreadMessage: () => ({ connected: true, retain: () => false }),
+}));
 vi.mock("@/hooks/mutations/thread-runtime-mutations", () => ({
   useCancelThreadPlan: () => ({
     isPending: false,
