@@ -127,7 +127,7 @@ function SkillDetailPage({
       onSelectPath={setSelectedPath}
       content={contentQuery.data?.content ?? ""}
       isLoadingContent={contentQuery.isLoading}
-      isContentError={contentQuery.isError}
+      isContentError={contentQuery.isError && contentQuery.data === undefined}
       canEdit={editableScope !== null}
       canDelete={deletableScope !== null}
       canOpenInEditor={editableScope !== null && canOpenPreferredFileTarget}

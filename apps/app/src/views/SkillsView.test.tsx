@@ -94,7 +94,7 @@ function LocationStateProbe() {
   );
 }
 
-function renderLibrarySkillRoute() {
+function renderLibrarySkillRoute(skillId = "skill_missing") {
   vi.spyOn(sdk.providers, "list").mockResolvedValue([]);
   const fetchMock = vi.fn(
     async () =>
@@ -110,9 +110,10 @@ function renderLibrarySkillRoute() {
       ),
   );
   vi.stubGlobal("fetch", fetchMock);
-  const { wrapper: QueryClientWrapper } = createQueryClientTestHarness();
+  const { wrapper: QueryClientWrapper, queryClient } =
+    createQueryClientTestHarness();
   renderDom(
-    <MemoryRouter initialEntries={["/skills/library/skill_missing"]}>
+    <MemoryRouter initialEntries={[`/skills/library/${skillId}`]}>
       <QueryClientWrapper>
         <Routes>
           <Route path="/skills/library/:skillId" element={<SkillsLibrary />} />
@@ -120,7 +121,7 @@ function renderLibrarySkillRoute() {
       </QueryClientWrapper>
     </MemoryRouter>,
   );
-  return fetchMock;
+  return { fetchMock, queryClient };
 }
 
 const NO_PROVIDER_ROSTER: ReadonlyMap<string, ProviderInfo> = new Map();
@@ -837,6 +838,38 @@ describe("SkillsOverview", () => {
 });
 
 describe("SkillsLibrary library detail routing", () => {
+  it("keeps cached file content through a failed refresh and updates on success", async () => {
+    const skill = makeSkill();
+    vi.spyOn(sdk.skills, "list").mockResolvedValue({ skills: [skill] });
+    vi.spyOn(sdk.skills, "listFiles").mockResolvedValue({
+      files: ["SKILL.md"],
+      truncated: false,
+    });
+    const content = vi.spyOn(sdk.skills, "getContent").mockResolvedValue({
+      content: "Cached instructions",
+      revision: "a".repeat(64),
+    });
+    const { queryClient } = renderLibrarySkillRoute(skill.id);
+    await screen.findByText("Cached instructions");
+
+    content.mockRejectedValue(new Error("HTTP 503"));
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    expect(screen.getByText("Cached instructions")).toBeTruthy();
+    expect(screen.queryByText("Failed to load SKILL.md.")).toBeNull();
+
+    content.mockResolvedValue({
+      content: "Updated instructions",
+      revision: "b".repeat(64),
+    });
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    expect(await screen.findByText("Updated instructions")).toBeTruthy();
+    expect(screen.queryByText("Cached instructions")).toBeNull();
+  });
+
   it("keeps a detail loading state while the skill library resolves", () => {
     vi.spyOn(sdk.skills, "list").mockImplementation(
       () => new Promise(() => {}),
@@ -863,7 +896,7 @@ describe("SkillsLibrary library detail routing", () => {
   it("shows not found on an unknown library skill detail route", async () => {
     vi.spyOn(sdk.skills, "list").mockResolvedValue({ skills: [] });
 
-    const fetchMock = renderLibrarySkillRoute();
+    const { fetchMock } = renderLibrarySkillRoute();
 
     const notFound = await screen.findByText("Skill not found.");
     expect(notFound.closest("[data-resource-detail-state]")).not.toBeNull();
