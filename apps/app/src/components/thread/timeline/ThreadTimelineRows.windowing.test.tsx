@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,13 +8,11 @@ import { CompactViewportOverrideProvider } from "@bb/shared-ui/hooks/use-compact
 import { buildTimelineViewRows } from "@bb/thread-view";
 import {
   BottomAnchorContext,
-  BottomAnchoredScrollBody,
   type BottomAnchorContextValue,
 } from "@/components/ui/bottom-anchored-scroll-body";
 import {
   conversationRow,
   delegationRow,
-  fileReadRow,
 } from "@/test/fixtures/thread-timeline-rows";
 import { ThreadTimelineRows } from "./ThreadTimelineRows";
 import { collectSearchedMessageAncestorRowIds } from "./useScrollToSearchedMessage";
@@ -138,65 +136,6 @@ afterEach(() => {
 });
 
 describe("ThreadTimelineRows windowing experiment", () => {
-  it("uses rendered group IDs to preserve the nearest survivor when a refreshed bundle dissolves", () => {
-    const initialRows = [
-      conversationRow({ id: "before", role: "user", text: "Inspect files" }),
-      fileReadRow({ id: "read-a", path: "a.ts", seq: 2 }),
-      fileReadRow({ id: "read-b", path: "b.ts", seq: 3 }),
-      conversationRow({ id: "after", text: "Result", seq: 4 }),
-      conversationRow({ id: "tail", role: "user", text: "Continue", seq: 5 }),
-    ];
-    const queryClient = new QueryClient();
-    const timeline = (rows: typeof initialRows, replacementKey: object) => (
-      <MemoryRouter>
-        <QueryClientProvider client={queryClient}>
-          <BottomAnchoredScrollBody
-            footer={null}
-            maxWidthClassName="max-w-none"
-            scrollAreaClassName="replacement-scroll"
-          >
-            <ThreadTimelineRows
-              historyReplacementKey={replacementKey}
-              timelineRows={rows}
-              threadRuntimeDisplayStatus="idle"
-              workspaceRootPath={undefined}
-            />
-          </BottomAnchoredScrollBody>
-        </QueryClientProvider>
-      </MemoryRouter>
-    );
-    const view = render(timeline(initialRows, {}));
-    const scrollArea = view.container.querySelector<HTMLElement>(
-      ".replacement-scroll",
-    );
-    if (!scrollArea) throw new Error("Expected a scroll area");
-    Object.defineProperty(scrollArea, "clientHeight", { value: 100 });
-    Object.defineProperty(scrollArea, "scrollHeight", { value: 400 });
-    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(
-      function (this: HTMLElement) {
-        const topLevelRows = view.container.querySelectorAll(
-          '[data-timeline-row-list="top-level"] > [data-timeline-row-id]',
-        );
-        const index = Array.from(topLevelRows).indexOf(this);
-        return rect(index < 0 ? 0 : index * 100 - scrollArea.scrollTop, 100);
-      },
-    );
-    const groupId = buildTimelineViewRows(initialRows)[1]?.id;
-    expect(groupId).toContain("work-summary");
-    scrollArea.scrollTop = 150;
-    fireEvent.wheel(scrollArea, { deltaY: -150 });
-    fireEvent.scroll(scrollArea);
-
-    view.rerender(
-      timeline(initialRows.filter((row) => row.id !== "read-a"), {}),
-    );
-
-    expect(scrollArea.scrollTop).toBe(200);
-    expect(
-      view.container.querySelector(`[data-timeline-row-id="${groupId}"]`),
-    ).toBeNull();
-  });
-
   it("keeps the control timeline fully mounted", () => {
     const view = renderDelegation(false);
     const nestedList = view.container.querySelector(

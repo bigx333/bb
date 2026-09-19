@@ -6,6 +6,7 @@ import {
   type SidebarBootstrapResponse,
 } from "@bb/server-contract";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createDeferredPromise } from "@bb/test-helpers";
 import { request } from "@/lib/api";
 import {
   MAX_CACHED_SIDEBAR_THREADS_PER_PROJECT,
@@ -77,13 +78,8 @@ describe("useSidebarNavigation", () => {
       SIDEBAR_BOOTSTRAP_CACHE_KEY,
       JSON.stringify(BOOTSTRAP),
     );
-    let complete!: (value: SidebarBootstrapResponse) => void;
-    vi.mocked(request).mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          complete = resolve;
-        }),
-    );
+    const refresh = createDeferredPromise<SidebarBootstrapResponse>();
+    vi.mocked(request).mockReturnValue(refresh.promise);
     const { queryClient, wrapper } = createQueryClientTestHarness();
     const { result } = renderHook(
       () => ({
@@ -101,7 +97,7 @@ describe("useSidebarNavigation", () => {
       projects: [{ ...BOOTSTRAP.projects[0]!, name: "Refreshed project" }],
     };
     await act(async () => {
-      complete(updated);
+      refresh.resolve(updated);
     });
     await waitFor(() => expect(result.current.name).toBe("Refreshed project"));
     expect(queryClient.getQueryData(sidebarNavigationQueryKey())).toEqual(

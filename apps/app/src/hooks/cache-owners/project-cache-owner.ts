@@ -3,24 +3,12 @@ import type {
   ProjectResponse,
   ProjectWithThreadsResponse,
   SidebarBootstrapResponse,
-  ThreadResponse,
-  ThreadWithIncludesResponse,
 } from "@bb/server-contract";
 import {
-  allThreadDetailBootstrapQueryKeyPrefix,
-  allThreadQueryKeyPrefix,
   projectsQueryKey,
   sidebarNavigationQueryKey,
-  threadHistoryQueryKeyPrefix,
-  threadsQueryKey,
 } from "../queries/query-keys";
 import { invalidateProjectDeleteQueries } from "./mutation-cache-effects";
-import { getCachedSidebarNavigationThreads } from "./query-cache";
-import {
-  getCachedThreadLists,
-  iterateThreadListCacheEntries,
-} from "./thread-list-cache-data";
-import { removeThreadHistory } from "./thread-history-cache-owner";
 
 interface ApplyProjectCreateResultArgs {
   project: ProjectResponse;
@@ -140,7 +128,6 @@ export function applyProjectDeleteResult({
   projectId,
   queryClient,
 }: ApplyProjectDeleteResultArgs): void {
-  removeProjectThreadHistory({ projectId, queryClient });
   queryClient.setQueryData<ProjectResponse[]>(
     projectsQueryKey(),
     (currentProjects) =>
@@ -156,42 +143,4 @@ export function applyProjectDeleteResult({
         : currentNavigation,
   );
   invalidateProjectDeleteQueries({ queryClient });
-}
-
-export function removeProjectThreadHistory({
-  projectId,
-  queryClient,
-}: ApplyProjectDeleteResultArgs): void {
-  const cachedHistoryIds = new Set(
-    queryClient
-      .getQueryCache()
-      .findAll({ queryKey: threadHistoryQueryKeyPrefix() })
-      .map((query) => query.queryKey[1]),
-  );
-  const ids = new Set<string>();
-  for (const queryKey of [
-    allThreadQueryKeyPrefix(),
-    allThreadDetailBootstrapQueryKeyPrefix(),
-  ]) {
-    for (const [, thread] of queryClient.getQueriesData<
-      ThreadResponse | ThreadWithIncludesResponse
-    >({ queryKey })) {
-      if (thread?.projectId === projectId) ids.add(thread.id);
-    }
-  }
-  for (const { data } of getCachedThreadLists(queryClient, {
-    queryKey: threadsQueryKey(),
-  })) {
-    for (const thread of iterateThreadListCacheEntries(data)) {
-      if (thread.projectId === projectId) ids.add(thread.id);
-    }
-  }
-  for (const thread of getCachedSidebarNavigationThreads(queryClient)) {
-    if (thread.projectId === projectId) ids.add(thread.id);
-  }
-  for (const threadId of ids) {
-    if (cachedHistoryIds.has(threadId)) {
-      removeThreadHistory({ queryClient, threadId });
-    }
-  }
 }

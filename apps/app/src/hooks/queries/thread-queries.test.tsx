@@ -37,9 +37,7 @@ import {
   useThreadQueuedMessages,
   useThreadStorageLocation,
   useThreadTimeline,
-  useThreadTimelineTurnSummaryDetails,
 } from "./thread-queries";
-import { commandRow } from "@/test/fixtures/thread-timeline-rows";
 import {
   makeProjectWithThreadsResponse,
   makeSidebarBootstrapResponse,
@@ -66,7 +64,6 @@ vi.mock("@/lib/sdk", () => ({
       interactions: { list: vi.fn() },
       storageLocation: vi.fn(),
       timeline: vi.fn(),
-      timelineTurnSummaryDetails: vi.fn(),
     },
   },
 }));
@@ -161,39 +158,6 @@ beforeEach(() => {
     url: "/api/v1/threads/thread-1/host-files/content?path=%2Ftmp%2Flog.txt",
     mimeType: "text/plain",
     content: "preview",
-  });
-});
-
-describe("useThreadTimelineTurnSummaryDetails", () => {
-  it("loads older turn details without duplicate rows", async () => {
-    const older = commandRow({ id: "older-command", command: "pwd", seq: 1 });
-    const latest = commandRow({ id: "latest-command", command: "ls", seq: 2 });
-    vi.mocked(sdk.threads.timelineTurnSummaryDetails)
-      .mockResolvedValueOnce({ rows: [latest], olderCursor: "older-page" })
-      .mockResolvedValueOnce({ rows: [older, latest], olderCursor: null });
-    const { wrapper } = createQueryClientTestHarness();
-    const { result } = renderHook(
-      () =>
-        useThreadTimelineTurnSummaryDetails({
-          threadId: "thread-1",
-          turnId: "turn-1",
-          sourceSeqStart: 1,
-          sourceSeqEnd: 2,
-        }),
-      { wrapper },
-    );
-
-    await waitFor(() => {
-      expect(result.current.isSuccess).toBe(true);
-    });
-    expect(result.current.data).toEqual({
-      rows: [older, latest],
-      olderCursor: null,
-    });
-    expect(sdk.threads.timelineTurnSummaryDetails).toHaveBeenCalledTimes(2);
-    expect(sdk.threads.timelineTurnSummaryDetails).toHaveBeenLastCalledWith(
-      expect.objectContaining({ beforeCursor: "older-page" }),
-    );
   });
 });
 

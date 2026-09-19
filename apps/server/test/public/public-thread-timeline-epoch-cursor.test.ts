@@ -11,7 +11,7 @@ import { seedEvent, seedThreadFixture } from "../helpers/seed.js";
 import { withTestHarness } from "../helpers/test-app.js";
 
 describe("timeline content continuation at the history epoch", () => {
-  it.each([false, true])("pages through renamed=%s history", async (rename) => {
+  it("accepts every cursor it returns while paging the oldest nested turn", async () => {
     await withTestHarness(
       {
         featureFlags: { ...defaultFeatureFlags, timelineWindowEventBudget: 2 },
@@ -58,27 +58,6 @@ describe("timeline content continuation at the history epoch", () => {
           type: "turn/completed",
           data: { status: "completed" },
         });
-        if (rename) {
-          const route = `/api/v1/threads/${thread.id}/timeline?includeNestedRows=true`;
-          const cached = threadTimelineResponseSchema.parse(
-            await readJson(await harness.app.request(route)),
-          );
-          const renamed = await harness.app.request(
-            `/api/v1/threads/${thread.id}`,
-            {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ title: "Renamed cached thread" }),
-            },
-          );
-          expect(renamed.status).toBe(200);
-          const refreshed = threadTimelineResponseSchema.parse(
-            await readJson(await harness.app.request(route)),
-          );
-          expect(refreshed.timelinePage.olderCursor).not.toEqual(
-            cached.timelinePage.olderCursor,
-          );
-        }
         let cursor: TimelinePaginationCursor | null = null;
         let rows: TimelineRow[] = [];
         let sawEpochCursor = false;

@@ -28,11 +28,6 @@ import {
 import { bumpDiffPatchFreshnessGeneration } from "./environment-diff-patch-cache-owner";
 import { invalidateSystemExecutionOptions } from "./system-cache-effects";
 import {
-  invalidateThreadHistory,
-  removeThreadHistory,
-} from "./thread-history-cache-owner";
-import { removeProjectThreadHistory } from "./project-cache-owner";
-import {
   getCachedThreadLists,
   iterateThreadListCacheEntries,
 } from "./thread-list-cache-data";
@@ -341,7 +336,6 @@ export const REALTIME_THREAD_CHANGE_REGISTRY = {
   "thread-deleted": {
     flush: "debounced",
     dirty: [
-      removeDeletedThreadHistory,
       dirtyThreadListQueries,
       dirtyThreadDetailQueries,
       dirtyThreadTimelineQueries,
@@ -366,7 +360,6 @@ export const REALTIME_THREAD_CHANGE_REGISTRY = {
       dirtyThreadDetailQueries,
       dirtyThreadSearchQueries,
       getThreadTimelineInvalidationQueryKeys,
-      dirtyThreadHistory,
       getThreadQueueContentInvalidationQueryKeys,
       dirtyProjectPromptHistoryQueries,
       getThreadPendingInteractionInvalidationQueryKeys,
@@ -386,12 +379,7 @@ export const REALTIME_THREAD_CHANGE_REGISTRY = {
   },
   "title-changed": {
     flush: "debounced",
-    dirty: [
-      dirtyActiveThreadListQueries,
-      dirtyThreadDetailQueries,
-      getThreadTimelineInvalidationQueryKeys,
-      dirtyThreadHistory,
-    ],
+    dirty: [dirtyActiveThreadListQueries, dirtyThreadDetailQueries],
   },
   "queue-changed": {
     flush: "debounced",
@@ -423,8 +411,6 @@ export const REALTIME_THREAD_CHANGE_REGISTRY = {
       dirtyThreadDetailQueries,
       dirtyThreadDefaultExecutionOptionsQueries,
       dirtyThreadStorageQueriesForThread,
-      getThreadTimelineInvalidationQueryKeys,
-      dirtyThreadHistory,
     ],
   },
   "read-state-changed": {
@@ -467,7 +453,6 @@ export const REALTIME_ENVIRONMENT_CHANGE_REGISTRY = {
       dirtyEnvironmentBranchListQueries,
       dirtyEnvironmentThreadListQueries,
       dirtyThreadSearchQueries,
-      dirtyEnvironmentThreadHistory,
     ],
   },
   "status-changed": {
@@ -499,10 +484,7 @@ export const REALTIME_PROJECT_CHANGE_REGISTRY = {
     dirty: [getProjectListInvalidationQueryKeys],
   },
   "project-deleted": {
-    dirty: [
-      removeDeletedProjectThreadHistory,
-      getProjectListInvalidationQueryKeys,
-    ],
+    dirty: [getProjectListInvalidationQueryKeys],
   },
   "project-sources-changed": {
     dirty: [getProjectSourceDependentInvalidationQueryKeys],
@@ -546,7 +528,6 @@ export const REALTIME_SYSTEM_CHANGE_REGISTRY = {
       dirtySystemConfigQueries,
       dirtyMachineEnvironmentQueries,
       dirtyAllThreadTimelineQueries,
-      dirtyAllThreadHistory,
       dirtySystemProviderQueries,
       dirtySystemExecutionOptionQueries,
       dirtyEnvironmentProviderQueries,
@@ -563,12 +544,7 @@ export const REALTIME_SYSTEM_CHANGE_REGISTRY = {
     ],
   },
   "provider-registrations-changed": {
-    dirty: [
-      dirtySystemProviderQueries,
-      dirtySystemExecutionOptionQueries,
-      dirtyAllThreadTimelineQueries,
-      dirtyAllThreadHistory,
-    ],
+    dirty: [dirtySystemProviderQueries, dirtySystemExecutionOptionQueries],
   },
   "environment-availability-changed": {
     dirty: [dirtyEnvironmentProviderQueries],
@@ -846,49 +822,6 @@ function dirtyThreadDetailQueries({
   threadId,
 }: ThreadRealtimeDirtyContext): QueryKey[] {
   return getThreadDetailInvalidationQueryKeys({ threadId });
-}
-
-function dirtyThreadHistory({
-  flushOnce,
-  queryClient,
-  threadId,
-}: ThreadRealtimeDirtyContext): void {
-  if (flushOnce(`thread-history:${threadId ?? "all"}`)) {
-    void invalidateThreadHistory({ queryClient, threadId });
-  }
-}
-
-function removeDeletedThreadHistory({
-  queryClient,
-  threadId,
-}: ThreadRealtimeDirtyContext): void {
-  if (threadId !== undefined) removeThreadHistory({ queryClient, threadId });
-}
-
-function dirtyEnvironmentThreadHistory({
-  getCachedThreadIdsForEnvironment,
-  queryClient,
-}: EnvironmentRealtimeDirtyContext): void {
-  for (const threadId of getCachedThreadIdsForEnvironment()) {
-    for (const queryKey of getThreadTimelineInvalidationQueryKeys({
-      threadId,
-    })) {
-      void queryClient.invalidateQueries({ queryKey });
-    }
-    void invalidateThreadHistory({ queryClient, threadId });
-  }
-}
-
-function removeDeletedProjectThreadHistory({
-  projectId,
-  queryClient,
-}: ProjectRealtimeDirtyContext): void {
-  if (projectId !== undefined)
-    removeProjectThreadHistory({ projectId, queryClient });
-}
-
-function dirtyAllThreadHistory({ queryClient }: RealtimeDirtyContext): void {
-  void invalidateThreadHistory({ queryClient });
 }
 
 function dirtyThreadDefaultExecutionOptionsQueries({

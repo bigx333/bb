@@ -1,31 +1,12 @@
 // @vitest-environment jsdom
 
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { TimelineRow } from "@bb/server-contract";
 import { BottomAnchorContext } from "@/components/ui/bottom-anchored-scroll-body.js";
-import { conversationRow } from "@/test/fixtures/thread-timeline-rows";
 import { ThreadTimelineSurface } from "./ThreadTimelineSurface";
 
 vi.mock("@/hooks/queries/system-queries", () => ({
   useSystemConfig: () => ({ data: undefined }),
-}));
-
-vi.mock("./ThreadTimelineRows.js", () => ({
-  ThreadTimelineRows: ({ timelineRows }: { timelineRows: TimelineRow[] }) => (
-    <div>
-      {timelineRows.map((row) => (
-        <div key={row.id}>{row.kind === "conversation" ? row.text : row.id}</div>
-      ))}
-    </div>
-  ),
 }));
 
 afterEach(() => {
@@ -34,72 +15,6 @@ afterEach(() => {
 });
 
 describe("ThreadTimelineSurface load-older control", () => {
-  it("offers Show latest for held history without a composer or bottom-anchor context", () => {
-    const showLatest = vi.fn();
-    const surface = (historyUnrefreshed: boolean) => (
-      <ThreadTimelineSurface
-        activeThinking={null}
-        contextBoundarySeq={null}
-        historyUnrefreshed={historyUnrefreshed}
-        isThreadTimelinePending={false}
-        onShowLatestTimeline={showLatest}
-        showOngoingIndicator={false}
-        threadId="thread-1"
-        threadRuntimeDisplayStatus="idle"
-        timelineError={false}
-        timelineRows={[
-          conversationRow({ id: "cached", text: "Previously loaded reply" }),
-        ]}
-        workspaceRootPath={undefined}
-      />
-    );
-    const view = render(surface(true));
-    expect(screen.getByText("Previously loaded reply")).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Show latest" }));
-    expect(showLatest).toHaveBeenCalledTimes(1);
-    view.rerender(surface(false));
-    expect(screen.queryByRole("button", { name: "Show latest" })).toBeNull();
-  });
-
-  it("keeps cached messages readable when refresh fails and offers a bounded retry", () => {
-    const refresh = vi.fn().mockResolvedValue(undefined);
-    const surface = (isRefreshingHistory: boolean) => (
-      <ThreadTimelineSurface
-        activeThinking={null}
-        contextBoundarySeq={null}
-        historyRefreshError={new Error("Network offline")}
-        historyUnrefreshed
-        isRefreshingHistory={isRefreshingHistory}
-        isThreadTimelinePending={false}
-        onRefreshHistory={refresh}
-        showOngoingIndicator={false}
-        threadId="thread-1"
-        threadRuntimeDisplayStatus="idle"
-        timelineError
-        timelineRows={[
-          conversationRow({ id: "cached", text: "Previously loaded reply" }),
-        ]}
-        workspaceRootPath={undefined}
-      />
-    );
-    const view = render(surface(false));
-
-    expect(screen.getByText("Previously loaded reply")).not.toBeNull();
-    expect(screen.queryByText("Failed to load timeline")).toBeNull();
-    expect(screen.getByRole("status").textContent).toContain(
-      "Couldn't refresh history",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(refresh).toHaveBeenCalledTimes(1);
-
-    view.rerender(surface(true));
-    expect(
-      screen.getByRole<HTMLButtonElement>("button", { name: "Refreshing…" })
-        .disabled,
-    ).toBe(true);
-    expect(screen.getByText("Previously loaded reply")).not.toBeNull();
-  });
-
   it("resumes auto-loading after a context boundary replaces a timeline whose older page failed", async () => {
     const intersectionCallbacks: IntersectionObserverCallback[] = [];
     vi.stubGlobal(

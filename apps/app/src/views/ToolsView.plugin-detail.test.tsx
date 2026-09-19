@@ -21,6 +21,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createDeferredPromise } from "@bb/test-helpers";
 import {
   EMPTY_PLUGIN_UPDATE_STATE,
   type PluginListItem,
@@ -166,14 +167,12 @@ describe("plugin detail page cached loads", () => {
   ])(
     "loads with cached=$cached and refresh failure=$fails",
     async ({ cached, fails }) => {
-      let complete!: (response: Response) => void;
+      const response = createDeferredPromise<Response>();
       vi.stubGlobal(
         "fetch",
         vi.fn(async (input: RequestInfo | URL) => {
           if (String(input) === "/api/v1/plugins") {
-            return new Promise<Response>((resolve) => {
-              complete = resolve;
-            });
+            return response.promise;
           }
           if (String(input).includes("plugin-catalog/search")) {
             return Response.json({ results: [], collections: [] });
@@ -204,7 +203,7 @@ describe("plugin detail page cached loads", () => {
         expect(screen.getByText("Loading plugin")).toBeTruthy();
       }
       await act(async () => {
-        complete(
+        response.resolve(
           fails
             ? Response.json({ error: "refresh failed" }, { status: 503 })
             : Response.json({

@@ -1,3 +1,4 @@
+import { prependOlderTimelineRows } from "@bb/client-core";
 import {
   useInfiniteQuery,
   useQuery,
@@ -910,7 +911,7 @@ function resolveThreadTimelineSegmentLimit(): number | undefined {
     : undefined;
 }
 
-export async function fetchThreadTimeline({
+async function fetchThreadTimeline({
   queryClient,
   signal,
   threadId,
@@ -1009,12 +1010,8 @@ export function useThreadTimelineTurnSummaryDetails(
         signal,
       };
       const response = await sdk.threads.timelineTurnSummaryDetails(input);
-      let cursor = response.olderCursor;
-      if (!cursor) return { ...response, olderCursor: null };
-      const { prependOlderTimelineRows } = await import(
-        "@bb/client-core/timeline"
-      );
       let rows = response.rows;
+      let cursor = response.olderCursor;
       while (cursor) {
         const older = await sdk.threads.timelineTurnSummaryDetails({
           ...input,

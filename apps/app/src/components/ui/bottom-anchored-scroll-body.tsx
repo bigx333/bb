@@ -1,5 +1,4 @@
 import {
-  Component,
   createContext,
   useCallback,
   useContext,
@@ -9,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ContextType, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useStore } from "jotai";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { usePointerCoarse } from "@bb/shared-ui/hooks/use-pointer-coarse";
@@ -87,50 +86,6 @@ export const BottomAnchorContext =
 export const TimelineScrollRestoreRowIdContext = createContext<string | null>(
   null,
 );
-
-interface TimelineReplacementScrollAnchorProps {
-  rows: readonly { id: string }[];
-  replacementKey: object | null;
-}
-
-interface TimelineReplacementSnapshot {
-  anchor: ScrollAnchor | null;
-  scrollTop: number;
-}
-
-const TimelineReplacementAnchorContext = createContext<{
-  capture: (
-    previousRows: readonly { id: string }[],
-    nextRows: readonly { id: string }[],
-  ) => TimelineReplacementSnapshot | null;
-  restore: (snapshot: TimelineReplacementSnapshot) => void;
-} | null>(null);
-
-export class TimelineReplacementScrollAnchor extends Component<
-  TimelineReplacementScrollAnchorProps,
-  Record<string, never>,
-  TimelineReplacementSnapshot | null
-> {
-  static contextType = TimelineReplacementAnchorContext;
-  declare context: ContextType<typeof TimelineReplacementAnchorContext>;
-
-  getSnapshotBeforeUpdate(previousProps: TimelineReplacementScrollAnchorProps) {
-    if (previousProps.replacementKey === this.props.replacementKey) return null;
-    return this.context?.capture(previousProps.rows, this.props.rows) ?? null;
-  }
-
-  componentDidUpdate(
-    _previousProps: TimelineReplacementScrollAnchorProps,
-    _previousState: Readonly<Record<string, never>>,
-    snapshot: TimelineReplacementSnapshot | null,
-  ) {
-    if (snapshot !== null) this.context?.restore(snapshot);
-  }
-
-  render() {
-    return null;
-  }
-}
 
 export function useBottomAnchoredScroll(): BottomAnchorContextValue | null {
   return useContext(BottomAnchorContext);
@@ -294,11 +249,7 @@ export function BottomAnchoredScrollBody({
     anchor: ScrollAnchor;
     attemptsRemaining: number;
     lastAppliedScrollTop: number | null;
-    kind: "navigation" | "replacement";
   } | null>(null);
-  const preserveDetachedReplacementRef = useRef(false);
-  const [replacementScrollRestoreRowId, setReplacementScrollRestoreRowId] =
-    useState<string | null>(null);
   const scrollAnchorCaptureThrottleRef = useRef<{
     lastWriteAt: number;
     trailingTimeout: number | null;
@@ -340,7 +291,6 @@ export function BottomAnchoredScrollBody({
 
   const cancelPendingScrollRestore = useCallback(() => {
     pendingScrollRestoreRef.current = null;
-    setReplacementScrollRestoreRowId(null);
   }, []);
 
   const cancelQueuedRestore = useCallback(() => {
@@ -405,7 +355,6 @@ export function BottomAnchoredScrollBody({
   const scrollToBottom = useCallback(() => {
     const scrollArea = scrollAreaRef.current;
     cancelPendingScrollRestore();
-    preserveDetachedReplacementRef.current = false;
     userScrollIntentUntilRef.current = 0;
     pointerScrollIntentRef.current = false;
     userDetachedFromBottomRef.current = false;
@@ -419,8 +368,6 @@ export function BottomAnchoredScrollBody({
 
   const scrollElementIntoView = useCallback(
     ({ element, options }: ScrollElementIntoViewArgs) => {
-      cancelPendingScrollRestore();
-      preserveDetachedReplacementRef.current = false;
       const scrollArea = scrollAreaRef.current;
       if (
         scrollArea &&
@@ -433,13 +380,11 @@ export function BottomAnchoredScrollBody({
       cancelQueuedRestore();
       element.scrollIntoView(options);
     },
-    [cancelPendingScrollRestore, cancelQueuedRestore],
+    [cancelQueuedRestore],
   );
 
   const scrollElementIntoViewClampedToMaxScroll = useCallback(
     ({ element }: ScrollElementIntoViewClampedToMaxScrollArgs) => {
-      cancelPendingScrollRestore();
-      preserveDetachedReplacementRef.current = false;
       const scrollArea = scrollAreaRef.current;
       if (!scrollArea) {
         element.scrollIntoView({ block: "start", inline: "nearest" });
@@ -466,12 +411,7 @@ export function BottomAnchoredScrollBody({
 
       cancelQueuedRestore();
     },
-    [
-      cancelPendingScrollRestore,
-      cancelQueuedRestore,
-      queueBottomRestore,
-      refreshMaxScrollOffset,
-    ],
+    [cancelQueuedRestore, queueBottomRestore, refreshMaxScrollOffset],
   );
 
   const captureScrollAnchor = useCallback(() => {
@@ -535,7 +475,7 @@ export function BottomAnchoredScrollBody({
       const recentUserIntent = hasRecentUserScrollIntent();
       const anchorAtom =
         threadTimelineScrollAnchorAtomFamily(scrollAnchorThreadId);
-      if (atBottomByGeometry && !preserveDetachedReplacementRef.current) {
+      if (atBottomByGeometry) {
         userDetachedFromBottomRef.current = false;
         store.set(anchorAtom, {
           rowId: "",
@@ -602,7 +542,7 @@ export function BottomAnchoredScrollBody({
   }, [scrollAnchorCaptureThrottleMs, scrollAnchorThreadId, writeScrollAnchor]);
 
   const applyScrollRestore = useCallback(
-    (anchor: ScrollAnchor, clampWithinRow: boolean): number | null => {
+    (anchor: ScrollAnchor): number | null => {
       const scrollArea = scrollAreaRef.current;
       if (!scrollArea) return null;
       const rowElement = findTimelineRowElement(scrollArea, anchor.rowId);
@@ -616,13 +556,7 @@ export function BottomAnchoredScrollBody({
       });
       const targetScrollTop = Math.min(
         refreshMaxScrollOffset(scrollArea),
-        revealOffset +
-          (clampWithinRow
-            ? Math.min(
-                anchor.offsetWithinRow,
-                Math.max(0, rowElement.getBoundingClientRect().height - 1),
-              )
-            : anchor.offsetWithinRow),
+        revealOffset + anchor.offsetWithinRow,
       );
       scrollArea.scrollTop = targetScrollTop;
       return targetScrollTop;
@@ -631,12 +565,10 @@ export function BottomAnchoredScrollBody({
   );
 
   const markUserScrollIntent = useCallback(() => {
-    cancelPendingScrollRestore();
-    preserveDetachedReplacementRef.current = false;
     userScrollInputPendingRef.current = true;
     userScrollIntentUntilRef.current =
       window.performance.now() + USER_SCROLL_INTENT_MS;
-  }, [cancelPendingScrollRestore]);
+  }, []);
 
   const markWheelScrollIntent = useCallback(
     (event: WheelEvent) => {
@@ -671,10 +603,8 @@ export function BottomAnchoredScrollBody({
   }, [markUserScrollIntent]);
 
   const startPointerScrollIntent = useCallback(() => {
-    cancelPendingScrollRestore();
-    preserveDetachedReplacementRef.current = false;
     pointerScrollIntentRef.current = true;
-  }, [cancelPendingScrollRestore]);
+  }, []);
 
   const endPointerScrollIntent = useCallback(() => {
     pointerScrollIntentRef.current = false;
@@ -694,13 +624,12 @@ export function BottomAnchoredScrollBody({
   );
 
   const attachToBottom = useCallback(() => {
-    preserveDetachedReplacementRef.current = false;
     userDetachedFromBottomRef.current = false;
     shouldStickToBottomRef.current = true;
     userScrollIntentUntilRef.current = 0;
     setIsAtBottom(true);
-    cancelPendingScrollRestore();
-  }, [cancelPendingScrollRestore]);
+    pendingScrollRestoreRef.current = null;
+  }, []);
 
   const syncBottomStateFromScroll = useCallback(() => {
     const scrollArea = scrollAreaRef.current;
@@ -708,13 +637,6 @@ export function BottomAnchoredScrollBody({
     const hasDirectUserScrollInput =
       userScrollInputPendingRef.current || pointerScrollIntentRef.current;
     userScrollInputPendingRef.current = false;
-
-    if (
-      pendingScrollRestoreRef.current?.kind === "replacement" &&
-      !hasDirectUserScrollInput
-    ) {
-      return;
-    }
 
     if (
       pendingPrependAnchorRef.current !== null &&
@@ -745,7 +667,7 @@ export function BottomAnchoredScrollBody({
       );
     }
 
-    if (nearBottom && !preserveDetachedReplacementRef.current) {
+    if (nearBottom) {
       attachToBottom();
       return;
     }
@@ -756,10 +678,9 @@ export function BottomAnchoredScrollBody({
     shouldStickToBottomRef.current = false;
     setIsAtBottom(false);
     cancelQueuedRestore();
-    cancelPendingScrollRestore();
+    pendingScrollRestoreRef.current = null;
   }, [
     attachToBottom,
-    cancelPendingScrollRestore,
     cancelQueuedRestore,
     hasRecentUserScrollIntent,
     readMaxScrollOffset,
@@ -775,120 +696,24 @@ export function BottomAnchoredScrollBody({
     const pending = pendingScrollRestoreRef.current;
     if (!pending) return false;
     pending.attemptsRemaining -= 1;
-    const appliedScrollTop = applyScrollRestore(
-      pending.anchor,
-      pending.kind === "replacement",
-    );
+    const appliedScrollTop = applyScrollRestore(pending.anchor);
     if (appliedScrollTop !== null) {
       if (pending.lastAppliedScrollTop === appliedScrollTop) {
-        cancelPendingScrollRestore();
+        pendingScrollRestoreRef.current = null;
         return true;
       }
       pending.lastAppliedScrollTop = appliedScrollTop;
     }
     if (pending.attemptsRemaining <= 0) {
-      cancelPendingScrollRestore();
-      if (appliedScrollTop === null && pending.kind === "navigation") {
+      pendingScrollRestoreRef.current = null;
+      if (appliedScrollTop === null) {
         shouldStickToBottomRef.current = true;
         setIsAtBottom(true);
         queueBottomRestore();
       }
     }
     return true;
-  }, [applyScrollRestore, cancelPendingScrollRestore, queueBottomRestore]);
-
-  const captureReplacementAnchor = useCallback(
-    (
-      previousRows: readonly { id: string }[],
-      nextRows: readonly { id: string }[],
-    ): TimelineReplacementSnapshot | null => {
-      const scrollArea = scrollAreaRef.current;
-      if (
-        !scrollArea ||
-        shouldStickToBottomRef.current ||
-        pointerScrollIntentRef.current ||
-        userScrollInputPendingRef.current
-      ) {
-        return null;
-      }
-      const visible = getTopMostVisibleRow(
-        scrollArea,
-        getScrollAnchorRows(scrollArea).rows,
-      );
-      const nextIds = new Set(nextRows.map((row) => row.id));
-      let rowId = visible?.rowId;
-      let offsetWithinRow = visible?.offsetWithinRow ?? 0;
-      if (rowId !== undefined && !nextIds.has(rowId)) {
-        const index = previousRows.findIndex((row) => row.id === rowId);
-        rowId = undefined;
-        offsetWithinRow = 0;
-        for (let distance = 1; distance < previousRows.length; distance += 1) {
-          const next = previousRows[index + distance];
-          const previous = previousRows[index - distance];
-          if (next !== undefined && nextIds.has(next.id)) {
-            rowId = next.id;
-            break;
-          }
-          if (previous !== undefined && nextIds.has(previous.id)) {
-            rowId = previous.id;
-            break;
-          }
-        }
-      }
-      return {
-        anchor:
-          rowId === undefined
-            ? null
-            : { rowId, offsetWithinRow, atBottom: false },
-        scrollTop: scrollArea.scrollTop,
-      };
-    },
-    [],
-  );
-
-  const restoreReplacementAnchor = useCallback(
-    (snapshot: TimelineReplacementSnapshot) => {
-      const scrollArea = scrollAreaRef.current;
-      if (!scrollArea) return;
-      pendingPrependAnchorRef.current = null;
-      scrollAnchorRowsRef.current = null;
-      preserveDetachedReplacementRef.current = true;
-      shouldStickToBottomRef.current = false;
-      userDetachedFromBottomRef.current = true;
-      setIsAtBottom(false);
-      cancelQueuedRestore();
-      if (snapshot.anchor === null) {
-        cancelPendingScrollRestore();
-        scrollArea.scrollTop = Math.min(
-          snapshot.scrollTop,
-          refreshMaxScrollOffset(scrollArea),
-        );
-        return;
-      }
-      pendingScrollRestoreRef.current = {
-        anchor: snapshot.anchor,
-        attemptsRemaining: SCROLL_ANCHOR_RESTORE_MAX_ATTEMPTS,
-        lastAppliedScrollTop: null,
-        kind: "replacement",
-      };
-      setReplacementScrollRestoreRowId(snapshot.anchor.rowId);
-    },
-    [cancelPendingScrollRestore, cancelQueuedRestore, refreshMaxScrollOffset],
-  );
-
-  const replacementAnchorContextValue = useMemo(
-    () => ({
-      capture: captureReplacementAnchor,
-      restore: restoreReplacementAnchor,
-    }),
-    [captureReplacementAnchor, restoreReplacementAnchor],
-  );
-
-  useLayoutEffect(() => {
-    if (pendingScrollRestoreRef.current?.kind === "replacement") {
-      advancePendingScrollRestore();
-    }
-  });
+  }, [applyScrollRestore, queueBottomRestore]);
 
   const handleScrollAreaResize = useCallback(
     (entries: ResizeObserverEntry[]) => {
@@ -925,7 +750,6 @@ export function BottomAnchoredScrollBody({
         resizeObserverHasDeliveredRef.current = true;
         shrankOntoBottomWhileDetached =
           cacheWasAuthoritative &&
-          !preserveDetachedReplacementRef.current &&
           !shouldStickToBottomRef.current &&
           maxScrollOffset < previousMaxScrollOffset &&
           isScrolledNearBottom(maxScrollOffset, scrollArea.scrollTop);
@@ -958,7 +782,6 @@ export function BottomAnchoredScrollBody({
       anchor,
       attemptsRemaining: SCROLL_ANCHOR_RESTORE_MAX_ATTEMPTS,
       lastAppliedScrollTop: null,
-      kind: "navigation",
     };
     advancePendingScrollRestore();
   }, [scrollAnchorThreadId, store, advancePendingScrollRestore]);
@@ -1084,7 +907,7 @@ export function BottomAnchoredScrollBody({
   return (
     <BottomAnchorContext.Provider value={bottomAnchorContextValue}>
       <TimelineScrollRestoreRowIdContext.Provider
-        value={replacementScrollRestoreRowId ?? initialScrollRestoreRowId}
+        value={initialScrollRestoreRowId}
       >
         <div className="grid min-h-0 flex-1 grid-rows-[minmax(auto,1fr)] overflow-hidden">
           <div
@@ -1110,11 +933,7 @@ export function BottomAnchoredScrollBody({
                 )}
                 style={PAGE_SHELL_CONTENT_STYLE}
               >
-                <TimelineReplacementAnchorContext.Provider
-                  value={replacementAnchorContextValue}
-                >
-                  {children}
-                </TimelineReplacementAnchorContext.Provider>
+                {children}
               </div>
               <div className="scroll-bottom-anchor" aria-hidden />
               {footer ? (

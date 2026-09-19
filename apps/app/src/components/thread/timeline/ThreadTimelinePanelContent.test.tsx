@@ -7,13 +7,11 @@ import type { ThreadRuntimeDisplayStatus } from "@bb/domain";
 import type { TimelineWorkflowWorkRow } from "@bb/server-contract";
 import { ThreadTimelinePanelContent } from "./ThreadTimelinePanelContent.js";
 import type { UseThreadTimelineControllerResult } from "./useThreadTimelineController.js";
-import { BbHttpError } from "@/lib/sdk";
 
 const mocks = vi.hoisted(() => ({
   activeBackgroundAgentCount: 0,
   displayStatus: "idle" as ThreadRuntimeDisplayStatus,
   threadStatus: "idle",
-  threadError: null as Error | null,
 }));
 
 vi.mock("@/hooks/queries/thread-queries", () => ({
@@ -23,7 +21,7 @@ vi.mock("@/hooks/queries/thread-queries", () => ({
       runtime: { displayStatus: mocks.displayStatus },
       status: mocks.threadStatus,
     },
-    error: mocks.threadError,
+    error: null,
   }),
 }));
 
@@ -44,7 +42,23 @@ vi.mock("./ThreadTimelineSurface.js", () => ({
 }));
 
 vi.mock("./useThreadTimelineController.js", () => ({
-  useThreadTimelineController: () => baseTimeline(),
+  useThreadTimelineController: () => ({
+    activePromptMode: null,
+    activeThinking: null,
+    activeWorkflows: [],
+    activeBackgroundCommands: [],
+    contextBoundarySeq: null,
+    contextWindowUsage: undefined,
+    goal: null,
+    modelFallback: null,
+    hasOlderTimelineRows: false,
+    isLoadingOlderTimelineRows: false,
+    loadOlderTimelineRows: vi.fn(),
+    pendingTodos: null,
+    timelineError: null,
+    timelineLoading: false,
+    timelineRows: [],
+  }),
 }));
 
 vi.mock("@/components/ui/conversation.js", () => ({
@@ -90,14 +104,8 @@ function baseTimeline(
     contextWindowUsage: undefined,
     goal: null,
     hasOlderTimelineRows: false,
-    historyRefreshError: null,
-    historyUnrefreshed: false,
-    historyReplacementKey: null,
     isLoadingOlderTimelineRows: false,
-    isRefreshingHistory: false,
     loadOlderTimelineRows: vi.fn(),
-    refreshHistory: vi.fn().mockResolvedValue(undefined),
-    showLatestTimeline: vi.fn(),
     pendingTodos: null,
     timelineError: null,
     timelineLoading: false,
@@ -113,33 +121,9 @@ afterEach(() => {
   mocks.activeBackgroundAgentCount = 0;
   mocks.displayStatus = "idle";
   mocks.threadStatus = "idle";
-  mocks.threadError = null;
 });
 
 describe("ThreadTimelinePanelContent", () => {
-  it.each([401, 403, 404])(
-    "hides retained history after a %s access failure",
-    (status) => {
-      mocks.threadError = new BbHttpError({
-        body: null,
-        code: null,
-        message: "Unavailable",
-        status,
-      });
-      render(
-        <ThreadTimelinePanelContent
-          threadId="thr-test"
-          timeline={baseTimeline({ activeWorkflows: [workflowRow()] })}
-        />,
-      );
-
-      expect(
-        screen.getByText("This thread is no longer available."),
-      ).not.toBeNull();
-      expect(screen.queryByText("Background work running")).toBeNull();
-    },
-  );
-
   it("shows a background-only working indicator while runtime is idle", () => {
     render(
       <ThreadTimelinePanelContent

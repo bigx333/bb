@@ -1,6 +1,7 @@
 import { createStore } from "jotai";
 import { QueryObserver } from "@tanstack/react-query";
 import type { ChangedMessage } from "@bb/domain";
+import { createDeferredPromise } from "@bb/test-helpers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -114,13 +115,8 @@ describe("local host daemon access atoms", () => {
     appQueryClient.setQueryData(systemConfigQueryKey(), cached, {
       updatedAt: Date.now() - 120_000,
     });
-    let complete!: (config: typeof cached) => void;
-    mocks.fetchSdkSystemConfig.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          complete = resolve;
-        }),
-    );
+    const refresh = createDeferredPromise<typeof cached>();
+    mocks.fetchSdkSystemConfig.mockReturnValue(refresh.promise);
     const store = createStore();
     const unsubscribe = store.sub(localHostDaemonAccessStateAtom, () => {});
     try {
@@ -128,7 +124,7 @@ describe("local host daemon access atoms", () => {
         "permission-required",
       );
       expect(mocks.fetchSdkSystemConfig).toHaveBeenCalledTimes(1);
-      complete(updated);
+      refresh.resolve(updated);
       await vi.waitFor(async () => {
         await expect(store.get(localHostDaemonAccessStateAtom)).resolves.toBe(
           "unavailable",
@@ -161,19 +157,16 @@ describe("local host daemon access atoms", () => {
   });
 
   it("waits on a cache miss and preserves the failed-load fallback", async () => {
-    let fail!: (error: Error) => void;
-    mocks.fetchSdkSystemConfig.mockImplementation(
-      () =>
-        new Promise((_resolve, reject) => {
-          fail = reject;
-        }),
-    );
+    const load = createDeferredPromise<
+      Awaited<ReturnType<typeof mocks.fetchSdkSystemConfig>>
+    >();
+    mocks.fetchSdkSystemConfig.mockReturnValue(load.promise);
     const store = createStore();
     const loaded = vi.fn();
     const result = store.get(localHostDaemonAccessStateAtom).then(loaded);
     await Promise.resolve();
     expect(loaded).not.toHaveBeenCalled();
-    fail(new Error("config unavailable"));
+    load.reject(new Error("config unavailable"));
     await result;
     expect(loaded).toHaveBeenCalledWith("unavailable");
   });
