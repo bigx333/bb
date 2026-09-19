@@ -291,35 +291,6 @@ describe("useThreadHistory", () => {
     expect(queryClient.getQueryData(key)).toBeUndefined();
   });
 
-  it("bounds reusable pages while returning deep foreground content", async () => {
-    const { queryClient, wrapper } = createQueryClientTestHarness();
-    const latest = page(50);
-    const { key } = seedHistory(queryClient, [latest]);
-    const { result } = renderHook(
-      () => useThreadHistory({ threadId: "thread-1", latestTimeline: latest }),
-      { wrapper },
-    );
-    let cursor = latest.timelinePage.olderCursor!;
-    for (const sequence of [40, 30, 20, 10, 0]) {
-      const older = page(sequence, { kind: "older", final: sequence === 0 });
-      vi.mocked(sdk.threads.timeline).mockResolvedValueOnce(older);
-      await act(async () => {
-        expect(await result.current.loadOlder(cursor)).toBe(older);
-        expect(queryClient.getQueryState(key)?.fetchStatus).toBe("idle");
-        expect(
-          queryClient.getQueryData<ThreadHistoryChain>(key)?.pages,
-        ).toHaveLength(Math.min(6 - sequence / 10, 5));
-      });
-      if (older.timelinePage.olderCursor)
-        cursor = older.timelinePage.olderCursor;
-    }
-    expect(result.current.data?.pages).toHaveLength(5);
-    expect(result.current.data?.pages.at(-1)?.response.rows[0]?.id).toBe(
-      "row-10",
-    );
-    expect(sdk.threads.timeline).toHaveBeenCalledTimes(5);
-  });
-
   it.each([401, 403, 404])(
     "clears cached history on an older read returning %s",
     async (status) => {

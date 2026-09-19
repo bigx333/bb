@@ -44,29 +44,7 @@ vi.mock("./ThreadTimelineSurface.js", () => ({
 }));
 
 vi.mock("./useThreadTimelineController.js", () => ({
-  useThreadTimelineController: () => ({
-    activePromptMode: null,
-    activeThinking: null,
-    activeWorkflows: [],
-    activeBackgroundCommands: [],
-    contextBoundarySeq: null,
-    contextWindowUsage: undefined,
-    goal: null,
-    modelFallback: null,
-    hasOlderTimelineRows: false,
-    historyRefreshError: null,
-    historyUnrefreshed: false,
-    historyReplacementKey: null,
-    isLoadingOlderTimelineRows: false,
-    isRefreshingHistory: false,
-    loadOlderTimelineRows: vi.fn(),
-    refreshHistory: vi.fn().mockResolvedValue(undefined),
-    showLatestTimeline: vi.fn(),
-    pendingTodos: null,
-    timelineError: null,
-    timelineLoading: false,
-    timelineRows: [],
-  }),
+  useThreadTimelineController: () => baseTimeline(),
 }));
 
 vi.mock("@/components/ui/conversation.js", () => ({
