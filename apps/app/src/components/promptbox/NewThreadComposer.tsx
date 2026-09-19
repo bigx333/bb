@@ -1575,6 +1575,9 @@ export function NewThreadComposer({
       }
       const sources: CreateExecutionInputSources = {
         ...executionInputSources,
+        ...(selectionScope === "component-local"
+          ? { providerId: "explicit" as const }
+          : {}),
         ...seededExecutionInputSources,
       };
       const request: NewThreadComposerSubmission = {
@@ -1628,6 +1631,7 @@ export function NewThreadComposer({
       submissionEnvironment,
       selectedProviderId,
       selectedThreadModel,
+      selectionScope,
       serviceTier,
       supportsServiceTier,
     ],

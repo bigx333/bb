@@ -1828,6 +1828,18 @@ describe("PluginNewThreadComposer seeding", () => {
     expect(window.localStorage.getItem("bb.root-compose.project-id")).toBe(
       "proj_1",
     );
+    act(() => splitPromptProps("composer-first").onSubmit());
+    await waitFor(() =>
+      expect(mocks.createThread).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: "proj_2",
+          providerId: "claude-code",
+          executionInputSources: expect.objectContaining({
+            providerId: "explicit",
+          }),
+        }),
+      ),
+    );
   });
 
   it("locks keyed composer mutations during create, restores failures, and completes in its originating pane", async () => {
