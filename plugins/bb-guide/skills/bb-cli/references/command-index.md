@@ -155,7 +155,8 @@ server.
 - `bb thread messages`
 - `bb thread timeline`
 - `bb thread output`
-- `bb thread open` — use `--new [--split <placement>]` to open an unsaved composer.
+- `bb thread open`
+  Use `--new [--split <placement>]` to open an unsaved composer.
 - `bb thread pane`
 - `bb thread section`
 - `bb thread section list`
