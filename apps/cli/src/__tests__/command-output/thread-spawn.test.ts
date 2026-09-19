@@ -53,7 +53,9 @@ describe("bb thread spawn command output", () => {
         input: [{ type: "text", text: "Save this", mentions: [] }],
       }),
     });
-    expect(collectLogLines()[0]).toBe("Draft saved: thread-draft");
+    expect(collectLogLines(vi.mocked(console.log))[0]).toBe(
+      "Draft saved: thread-draft",
+    );
   });
 
   it("rejects explicitly empty lifecycle ownership instead of creating an independent thread", async () => {
