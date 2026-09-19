@@ -55,6 +55,7 @@ import {
 } from "@/hooks/queries/thread-queries";
 import { useThreadDefaultExecutionOptions } from "@/hooks/queries/thread-default-execution-options-query";
 import { useSystemConfig } from "@/hooks/queries/system-queries";
+import { useRetainThreadMessage } from "@/hooks/useRetainThreadMessage";
 import {
   useCreateThreadQueuedMessage,
   useSendThreadMessage,
@@ -231,6 +232,7 @@ function EmbeddedThreadChatWithComposer({
   composer,
 }: EmbeddedThreadChatComposerModeProps) {
   const systemConfigQuery = useSystemConfig();
+  const pendingMessages = useRetainThreadMessage();
   const steerActiveThreadOnEnter =
     systemConfigQuery.data?.generalSettings.steerActiveThreadOnEnter ??
     defaultAppSettings.steerActiveThreadOnEnter;
@@ -441,17 +443,21 @@ function EmbeddedThreadChatWithComposer({
 
   const submitMode = useMemo<FollowUpComposerProps["submitMode"]>(
     () =>
-      buildSideChatSubmitMode({
-        childThreadId: threadId,
-        hasPendingInteraction: hasComposerBlockingPendingInteraction,
-        isDefaultExecutionOptionsLoading,
-        isPendingInteractionsInitialLoading:
-          pendingInteractionsInitialLoading || pendingInteractionsUnavailable,
-        isStopRequested,
-        onStop: handleStopThread,
-        runtimeDisplayStatus: displayStatus,
-      }),
+      !pendingMessages.connected && !shouldQueueFollowUpMessage(displayStatus)
+        ? { kind: "blocked", reason: "unavailable" }
+        : buildSideChatSubmitMode({
+            childThreadId: threadId,
+            hasPendingInteraction: hasComposerBlockingPendingInteraction,
+            isDefaultExecutionOptionsLoading,
+            isPendingInteractionsInitialLoading:
+              pendingInteractionsInitialLoading ||
+              pendingInteractionsUnavailable,
+            isStopRequested,
+            onStop: handleStopThread,
+            runtimeDisplayStatus: displayStatus,
+          }),
     [
+      pendingMessages.connected,
       displayStatus,
       hasComposerBlockingPendingInteraction,
       handleStopThread,
@@ -496,6 +502,32 @@ function EmbeddedThreadChatWithComposer({
       return;
     }
     const isQueuingMessage = shouldQueueFollowUpMessage(displayStatus);
+    if (!isQueuingMessage && !pendingMessages.connected) return;
+    try {
+      if (
+        pendingMessages.retain({
+          request: {
+            id: threadId,
+            input: submittedInput,
+            ...executionRequestFields,
+          },
+          operation: isQueuingMessage ? "queue" : "send",
+          draft: submittedDraft,
+          draftKey: promptDraft.storageKey,
+        })
+      ) {
+        promptDraft.clearIfCurrentMatches(submittedDraft);
+        setBottomAttachmentError(null);
+        return;
+      }
+    } catch (error) {
+      showMutationErrorToast({
+        error,
+        fallbackMessage: "Could not save message on this device",
+        lifecycleOperation: "queue_message",
+      });
+      return;
+    }
     if (!isQueuingMessage) promptDraft.clearIfCurrentMatches(submittedDraft);
     setBottomAttachmentError(null);
     setIsTurnSubmitting(true);
@@ -522,6 +554,9 @@ function EmbeddedThreadChatWithComposer({
         }
       });
   }, [
+    pendingMessages,
+    threadId,
+    executionRequestFields,
     currentPromptDraft,
     currentPromptDraftInput,
     defaultSendOrQueueInput,

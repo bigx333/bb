@@ -1,4 +1,5 @@
 import { prependOlderTimelineRows } from "@bb/client-core";
+import { usePendingThreadMessages } from "@/lib/pending-thread-messages";
 import {
   useInfiniteQuery,
   useQuery,
@@ -702,10 +703,11 @@ export function useThreadQueuedMessages(
   id: string,
   options?: ThreadQueuedMessagesQueryOptions,
 ) {
+  const pending = usePendingThreadMessages();
   const enabled = (options?.enabled ?? true) && Boolean(id);
   useThreadDetailRealtimeSubscription(id, { enabled });
 
-  return useQuery<ThreadQueuedMessageListResponse>({
+  const query = useQuery<ThreadQueuedMessageListResponse>({
     queryKey: threadQueuedMessagesQueryKey(id),
     queryFn: ({ signal }) =>
       sdk.threads.queuedMessages.list({
@@ -717,6 +719,16 @@ export function useThreadQueuedMessages(
     refetchOnWindowFocus: true,
     staleTime: options?.staleTime,
   });
+  const data = useMemo(() => {
+    const local = pending.filter((entry) => entry.request.id === id);
+    if (local.length === 0) return query.data;
+    const localIds = new Set(local.map((entry) => entry.row.id));
+    return [
+      ...(query.data ?? []).filter((row) => !localIds.has(row.id)),
+      ...local.map((entry) => entry.row),
+    ];
+  }, [pending, id, query.data]);
+  return { ...query, data };
 }
 
 export function useThreadPromptHistory(

@@ -1,4 +1,5 @@
 import { ThreadMachineStatus } from "@/components/promptbox/banner/ThreadMachineStatus";
+import { useRetainThreadMessage } from "@/hooks/useRetainThreadMessage";
 import {
   useCallback,
   useEffect,
@@ -428,6 +429,7 @@ export function ThreadDetailPromptArea({
   thread,
 }: ThreadDetailPromptAreaProps) {
   const navigate = useNavigate();
+  const pendingMessages = useRetainThreadMessage();
   const defaultExecutionOptionsQuery = useThreadDefaultExecutionOptions(
     thread.id,
     {
@@ -913,6 +915,11 @@ export function ThreadDetailPromptArea({
     clearThreadGoal.mutate(thread.id);
   }, [clearThreadGoal, thread.id]);
   const submitMode = useMemo<FollowUpSubmitMode>(() => {
+    if (
+      !pendingMessages.connected &&
+      !shouldQueueFollowUpMessage(runtimeDisplayStatus)
+    )
+      return { kind: "blocked", reason: "unavailable" };
     if (isHandoffSelection && !isStopRequested) {
       if (effectiveSelectedModel.length > 0) {
         return { kind: "ready" };
@@ -931,6 +938,7 @@ export function ThreadDetailPromptArea({
       runtimeDisplayStatus,
     });
   }, [
+    pendingMessages.connected,
     effectiveSelectedModel,
     handleStopThread,
     hasPendingInteraction,
@@ -1187,10 +1195,28 @@ export function ThreadDetailPromptArea({
       return;
     }
 
-    if (!isQueuingMessage) promptDraft.clearIfCurrentMatches(submittedDraft);
-    setBottomAttachmentError(null);
-
     try {
+      if (!isQueuingMessage && !pendingMessages.connected) return;
+      const retainedRequest = buildCreateQueuedFollowUpRequest({
+        threadId: thread.id,
+        input: submittedInput,
+        execution: followUpExecutionSelection,
+      });
+      if (
+        retainedRequest &&
+        pendingMessages.retain({
+          request: retainedRequest,
+          operation: isQueuingMessage ? "queue" : "send",
+          draft: submittedDraft,
+          draftKey: promptDraft.storageKey,
+        })
+      ) {
+        promptDraft.clearIfCurrentMatches(submittedDraft);
+        setBottomAttachmentError(null);
+        return;
+      }
+      if (!isQueuingMessage) promptDraft.clearIfCurrentMatches(submittedDraft);
+      setBottomAttachmentError(null);
       if (isQueuingMessage) {
         const request = buildCreateQueuedFollowUpRequest({
           threadId: thread.id,
@@ -1222,6 +1248,7 @@ export function ThreadDetailPromptArea({
       });
     }
   }, [
+    pendingMessages,
     createHandoffThread,
     createQueuedMessage,
     currentPromptDraft,
