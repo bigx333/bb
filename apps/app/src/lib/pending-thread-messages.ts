@@ -6,12 +6,6 @@ import {
   type ThreadQueuedMessage,
 } from "@bb/domain";
 import { createQueuedMessageRequestSchema } from "@bb/server-contract";
-import {
-  parsePromptDraftStorage,
-  serializePromptDraftStorage,
-  type PromptDraftState,
-} from "@bb/client-core";
-import { clearStoredPromptDraftIfCurrentMatches } from "@/hooks/usePromptDraftStorage";
 import { buildOptimisticQueuedMessage } from "@/hooks/cache-owners/thread-runtime-cache-owner";
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -23,8 +17,6 @@ const entrySchema = z.object({
     clientSubmissionId: z.string(),
   }),
   row: threadQueuedMessageSchema,
-  draftKey: z.string().nullable(),
-  draft: z.string().nullable(),
   error: z.string().nullable(),
 });
 export type PendingThreadMessage = z.infer<typeof entrySchema>;
@@ -60,13 +52,6 @@ function initialize(): void {
   if (initialized || typeof window === "undefined") return;
   initialized = true;
   refresh();
-  for (const entry of entries) {
-    if (entry.draftKey)
-      clearStoredPromptDraftIfCurrentMatches(
-        entry.draftKey,
-        parsePromptDraftStorage(entry.draft),
-      );
-  }
   window.addEventListener("storage", (event) => {
     if (event.key === null || event.key.startsWith(prefix)) refresh();
   });
@@ -125,8 +110,6 @@ export function retainThreadMessage(args: {
   queryClient: QueryClient;
   operation: PendingThreadMessage["operation"];
   request: z.infer<typeof createQueuedMessageRequestSchema> & { id: string };
-  draft: PromptDraftState;
-  draftKey: string | null;
 }): void {
   initialize();
   const request = { ...args.request, clientSubmissionId: nanoid() };
@@ -140,8 +123,6 @@ export function retainThreadMessage(args: {
     operation: args.operation,
     request,
     row,
-    draftKey: args.draftKey,
-    draft: serializePromptDraftStorage(args.draft),
     error: null,
   });
 }

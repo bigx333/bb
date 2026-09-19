@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { emptyPromptDraftState } from "@bb/client-core";
 import { createQueryClientTestHarness } from "@/test/queryClientTestHarness";
 import { PendingThreadMessagesSync } from "./PendingThreadMessagesSync";
 import {
@@ -44,8 +43,6 @@ it("retains an uncertain request and retries with the same submission key until 
     retainThreadMessage({
       queryClient,
       operation: "queue",
-      draftKey: null,
-      draft: { ...emptyPromptDraftState(), text: "saved locally" },
       request: {
         id: "thread-1",
         input: [{ type: "text", text: "saved locally", mentions: [] }],

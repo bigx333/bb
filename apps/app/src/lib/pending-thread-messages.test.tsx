@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { emptyPromptDraftState } from "@bb/client-core";
 import {
   getPendingThreadMessages,
   retainThreadMessage,
@@ -20,8 +19,6 @@ it("persists separate submissions and retains them across storage refreshes", ()
     retainThreadMessage({
       queryClient,
       operation: "queue",
-      draftKey: null,
-      draft: { ...emptyPromptDraftState(), text },
       request: {
         id: "thread-1",
         input: [{ type: "text", text, mentions: [] }],
@@ -50,8 +47,6 @@ it("reports storage failure before a caller can clear its composer", () => {
     retainThreadMessage({
       queryClient: new QueryClient(),
       operation: "queue",
-      draftKey: null,
-      draft: { ...emptyPromptDraftState(), text: "keep me" },
       request: {
         id: "thread-1",
         input: [{ type: "text", text: "keep me", mentions: [] }],

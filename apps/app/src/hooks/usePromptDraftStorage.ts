@@ -33,14 +33,6 @@ interface PromptDraftWriteOptions {
 
 const EMPTY_PROMPT_DRAFT = emptyPromptDraftState();
 
-export function clearStoredPromptDraftIfCurrentMatches(
-  storageKey: string,
-  expectedDraft: PromptDraftState,
-): void {
-  if (arePromptDraftStatesEqual(readPromptDraft(storageKey), expectedDraft)) {
-    writePromptDraft(storageKey, EMPTY_PROMPT_DRAFT, { persist: "immediate" });
-  }
-}
 const promptDraftCache = new Map<string, PromptDraftCacheEntry>();
 const promptDraftSubscribers = new Map<string, Set<PromptDraftListener>>();
 const pendingPromptDraftStorageKeys = new Set<string>();

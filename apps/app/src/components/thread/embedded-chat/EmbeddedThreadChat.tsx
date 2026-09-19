@@ -517,8 +517,6 @@ function EmbeddedThreadChatWithComposer({
             ...executionRequestFields,
           },
           operation: isQueuingMessage ? "queue" : "send",
-          draft: submittedDraft,
-          draftKey: promptDraft.storageKey,
         })
       ) {
         promptDraft.clearIfCurrentMatches(submittedDraft);
