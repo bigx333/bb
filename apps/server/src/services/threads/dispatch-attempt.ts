@@ -490,7 +490,7 @@ async function runDispatchAttempt(
     }
     if (
       payload.mode !== "start" &&
-      deps.pendingInteractions.hasPendingThreadInteraction(thread.id)
+      deps.pendingInteractions.hasTurnBoundPendingThreadInteraction(thread.id)
     ) {
       continued.outcome = waitOn({ kind: "interaction" }, null);
       return;

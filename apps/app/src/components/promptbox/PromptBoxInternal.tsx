@@ -1,3 +1,4 @@
+import { registerThreadMentionDropTarget } from "@/lib/thread-mention-drop";
 import type {
   PromptMentionCommandTrigger,
   PromptMentionResource,
@@ -2330,6 +2331,32 @@ export function PromptBoxInternal({
     },
     [finishApply],
   );
+
+  useEffect(() => {
+    const element = formRef.current;
+    if (!element || !editor) return;
+    return registerThreadMentionDropTarget(element, {
+      accepts: () => editor.isEditable && !editor.isDestroyed,
+      insert: (thread, x, y) => {
+        const position =
+          editor.view.posAtCoords({ left: x, top: y })?.pos ??
+          editor.state.selection.to;
+        insertPromptMentionPill({
+          editor,
+          range: { from: position, to: position },
+          resource: {
+            kind: "thread",
+            threadId: thread.threadId,
+            label: thread.label,
+          },
+          serializedText: `@thread:${thread.threadId}`,
+          trailingText: mentionPillTrailingText(editor.state.doc, position),
+          dismissedTrigger: null,
+          clearQuery: () => onMentionQueryChange(null, null),
+        });
+      },
+    });
+  }, [editor, insertPromptMentionPill, onMentionQueryChange]);
 
   const applyMentionSuggestion = useCallback(
     (item: PromptMentionSuggestion) => {
