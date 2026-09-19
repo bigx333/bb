@@ -157,13 +157,6 @@ export function useThreadTimelineController({
       if (history.data && (reset || tracker.history !== history.data)) {
         const head = history.data.pages[0];
         const replaced = reset || head !== tracker.history?.pages[0];
-        const refreshed = replaced
-          ? reconcileLoadedTimelineWithHistoryPages({
-              current: loaded,
-              pages: history.data.pages.map((page) => page.response),
-              surfaceKey,
-            })
-          : null;
         if (!replaced) {
           for (const page of history.data.pages.slice(1)) {
             if (
@@ -182,17 +175,19 @@ export function useThreadTimelineController({
               };
             }
           }
-        } else if (refreshed) {
-          loaded = refreshed;
-          unrefreshed = false;
-          replacementKey = head ?? null;
         } else {
-          const rebuilt = buildLoadedTimelineFromPages({
-            pages: history.data.pages.map((page) => page.response),
-            surfaceKey,
-          });
-          if (!detached && rebuilt) {
-            loaded = rebuilt;
+          const pages = history.data.pages.map((page) => page.response);
+          const refreshed =
+            reconcileLoadedTimelineWithHistoryPages({
+              current: loaded,
+              pages,
+              surfaceKey,
+            }) ??
+            (detached
+              ? null
+              : buildLoadedTimelineFromPages({ pages, surfaceKey }));
+          if (refreshed) {
+            loaded = refreshed;
             unrefreshed = false;
             replacementKey = head ?? null;
           } else {

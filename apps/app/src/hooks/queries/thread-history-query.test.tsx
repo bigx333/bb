@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import type { QueryClient } from "@tanstack/react-query";
 import type { ThreadTimelineResponse } from "@bb/server-contract";
 import { resolveLoadedTimelineSurfaceKey } from "@bb/client-core";
 import { createDeferredPromise } from "@bb/test-helpers";
@@ -70,11 +69,11 @@ function page(
   });
 }
 
-function seedHistory(
-  queryClient: QueryClient,
+function createHistoryHarness(
   pages: ThreadTimelineResponse[],
   updatedAt = Date.now(),
 ) {
+  const { queryClient, wrapper } = createQueryClientTestHarness();
   const latest = pages[0]!;
   const surfaceKey = resolveLoadedTimelineSurfaceKey("thread-1", latest);
   const key = threadHistoryQueryKey(
@@ -94,7 +93,16 @@ function seedHistory(
   };
   queryClient.setQueryData(threadTimelineQueryKey("thread-1"), latest);
   queryClient.setQueryData(key, chain, { updatedAt });
-  return { chain, key };
+  return {
+    queryClient,
+    chain,
+    key,
+    renderHistory: () =>
+      renderHook(
+        () => useThreadHistory({ threadId: "thread-1", latestTimeline: latest }),
+        { wrapper },
+      ),
+  };
 }
 
 describe("useThreadHistory", () => {
@@ -122,10 +130,8 @@ describe("useThreadHistory", () => {
   });
 
   it("keeps stale rows visible and rebuilds with fresh opaque cursors", async () => {
-    const { queryClient, wrapper } = createQueryClientTestHarness();
     const latest = page(30);
-    const { chain } = seedHistory(
-      queryClient,
+    const { chain, renderHistory } = createHistoryHarness(
       [latest, page(20, { kind: "older" })],
       Date.now() - 10_000,
     );
@@ -134,10 +140,7 @@ describe("useThreadHistory", () => {
     vi.mocked(sdk.threads.timeline)
       .mockReturnValueOnce(freshLatest.promise)
       .mockResolvedValueOnce(freshOlder);
-    const { result } = renderHook(
-      () => useThreadHistory({ threadId: "thread-1", latestTimeline: latest }),
-      { wrapper },
-    );
+    const { result } = renderHistory();
 
     expect(result.current.data).toBe(chain);
     await waitFor(() => expect(sdk.threads.timeline).toHaveBeenCalledTimes(1));
@@ -158,10 +161,8 @@ describe("useThreadHistory", () => {
   });
 
   it("retains the successful chain and validation times on refresh failure", async () => {
-    const { queryClient, wrapper } = createQueryClientTestHarness();
     const latest = page(30);
-    const { chain } = seedHistory(
-      queryClient,
+    const { queryClient, chain, renderHistory } = createHistoryHarness(
       [latest, page(20, { kind: "older" })],
       Date.now() - 10_000,
     );
@@ -169,10 +170,7 @@ describe("useThreadHistory", () => {
     vi.mocked(sdk.threads.timeline)
       .mockResolvedValueOnce(page(40, { snapshot: "fresh" }))
       .mockRejectedValueOnce(failure);
-    const { result } = renderHook(
-      () => useThreadHistory({ threadId: "thread-1", latestTimeline: latest }),
-      { wrapper },
-    );
+    const { result } = renderHistory();
 
     await waitFor(() => expect(result.current.error).toBe(failure));
     expect(result.current.data).toBe(chain);
@@ -193,19 +191,12 @@ describe("useThreadHistory", () => {
   });
 
   it("deduplicates two readers and does not cancel when one unmounts", async () => {
-    const { queryClient, wrapper } = createQueryClientTestHarness();
     const latest = page(30);
-    seedHistory(queryClient, [latest]);
+    const { renderHistory } = createHistoryHarness([latest]);
     const pending = createDeferredPromise<ThreadTimelineResponse>();
     vi.mocked(sdk.threads.timeline).mockReturnValue(pending.promise);
-    const first = renderHook(
-      () => useThreadHistory({ threadId: "thread-1", latestTimeline: latest }),
-      { wrapper },
-    );
-    const second = renderHook(
-      () => useThreadHistory({ threadId: "thread-1", latestTimeline: latest }),
-      { wrapper },
-    );
+    const first = renderHistory();
+    const second = renderHistory();
     const cursor = latest.timelinePage.olderCursor!;
     let firstRead!: Promise<ThreadTimelineResponse | undefined>;
     let secondRead!: Promise<ThreadTimelineResponse | undefined>;
@@ -229,18 +220,14 @@ describe("useThreadHistory", () => {
   });
 
   it("suspends and resumes an active older read without dropping its caller", async () => {
-    const { queryClient, wrapper } = createQueryClientTestHarness();
     const latest = page(30);
-    seedHistory(queryClient, [latest]);
+    const { queryClient, renderHistory } = createHistoryHarness([latest]);
     const pending = createDeferredPromise<ThreadTimelineResponse>();
     const older = page(20, { kind: "older" });
     vi.mocked(sdk.threads.timeline)
       .mockReturnValueOnce(pending.promise)
       .mockResolvedValueOnce(older);
-    const { result } = renderHook(
-      () => useThreadHistory({ threadId: "thread-1", latestTimeline: latest }),
-      { wrapper },
-    );
+    const { result } = renderHistory();
     let read!: Promise<ThreadTimelineResponse | undefined>;
     act(() => {
       read = result.current.loadOlder(latest.timelinePage.olderCursor!);
@@ -260,15 +247,11 @@ describe("useThreadHistory", () => {
   });
 
   it("purges pending work and ignores late results and optimistic writes", async () => {
-    const { queryClient, wrapper } = createQueryClientTestHarness();
     const latest = page(30);
-    const { key } = seedHistory(queryClient, [latest]);
+    const { queryClient, key, renderHistory } = createHistoryHarness([latest]);
     const pending = createDeferredPromise<ThreadTimelineResponse>();
     vi.mocked(sdk.threads.timeline).mockReturnValueOnce(pending.promise);
-    const { result } = renderHook(
-      () => useThreadHistory({ threadId: "thread-1", latestTimeline: latest }),
-      { wrapper },
-    );
+    const { result } = renderHistory();
     let read!: Promise<ThreadTimelineResponse | undefined>;
     act(() => {
       read = result.current.loadOlder(latest.timelinePage.olderCursor!);
@@ -294,9 +277,8 @@ describe("useThreadHistory", () => {
   it.each([401, 403, 404])(
     "clears cached history on an older read returning %s",
     async (status) => {
-      const { queryClient, wrapper } = createQueryClientTestHarness();
       const latest = page(30);
-      seedHistory(queryClient, [latest]);
+      const { renderHistory } = createHistoryHarness([latest]);
       const failure = new BbHttpError({
         body: null,
         code: null,
@@ -304,11 +286,7 @@ describe("useThreadHistory", () => {
         status,
       });
       vi.mocked(sdk.threads.timeline).mockRejectedValueOnce(failure);
-      const { result } = renderHook(
-        () =>
-          useThreadHistory({ threadId: "thread-1", latestTimeline: latest }),
-        { wrapper },
-      );
+      const { result } = renderHistory();
       await act(async () => {
         expect(
           await result.current.loadOlder(latest.timelinePage.olderCursor!),
@@ -321,10 +299,8 @@ describe("useThreadHistory", () => {
   );
 
   it("services a foreground cursor before restarting an interrupted background chain", async () => {
-    const { queryClient, wrapper } = createQueryClientTestHarness();
     const latest = page(30);
-    const { chain } = seedHistory(
-      queryClient,
+    const { chain, renderHistory } = createHistoryHarness(
       [latest, page(20, { kind: "older" })],
       Date.now() - 10_000,
     );
@@ -336,10 +312,7 @@ describe("useThreadHistory", () => {
       .mockReturnValueOnce(background.promise)
       .mockResolvedValueOnce(foreground)
       .mockReturnValueOnce(nextLatest.promise);
-    const { result } = renderHook(
-      () => useThreadHistory({ threadId: "thread-1", latestTimeline: latest }),
-      { wrapper },
-    );
+    const { result } = renderHistory();
     await waitFor(() => expect(sdk.threads.timeline).toHaveBeenCalledTimes(2));
     const backgroundSignal = vi.mocked(sdk.threads.timeline).mock.calls[1]![0]
       .signal;
@@ -361,9 +334,8 @@ describe("useThreadHistory", () => {
   });
 
   it("recovers an invalid cursor once and exposes a second failure", async () => {
-    const { queryClient, wrapper } = createQueryClientTestHarness();
     const latest = page(30);
-    const { chain } = seedHistory(queryClient, [
+    const { chain, renderHistory } = createHistoryHarness([
       latest,
       page(20, { kind: "older" }),
     ]);
@@ -377,10 +349,7 @@ describe("useThreadHistory", () => {
       .mockRejectedValueOnce(invalid)
       .mockResolvedValueOnce(page(40, { snapshot: "fresh" }))
       .mockRejectedValueOnce(invalid);
-    const { result } = renderHook(
-      () => useThreadHistory({ threadId: "thread-1", latestTimeline: latest }),
-      { wrapper },
-    );
+    const { result } = renderHistory();
     await act(async () => {
       await expect(
         result.current.loadOlder(
@@ -394,10 +363,8 @@ describe("useThreadHistory", () => {
   });
 
   it("invalidates an obsolete refresh without publishing its result", async () => {
-    const { queryClient, wrapper } = createQueryClientTestHarness();
     const latest = page(30);
-    seedHistory(
-      queryClient,
+    const { queryClient, renderHistory } = createHistoryHarness(
       [latest, page(20, { kind: "older" })],
       Date.now() - 10_000,
     );
@@ -407,10 +374,7 @@ describe("useThreadHistory", () => {
       .mockReturnValueOnce(obsolete.promise)
       .mockResolvedValueOnce(page(50, { snapshot: "newest" }))
       .mockResolvedValueOnce(page(35, { kind: "older", snapshot: "newest" }));
-    const { result } = renderHook(
-      () => useThreadHistory({ threadId: "thread-1", latestTimeline: latest }),
-      { wrapper },
-    );
+    const { result } = renderHistory();
     await waitFor(() => expect(sdk.threads.timeline).toHaveBeenCalledTimes(2));
     await act(async () => {
       await invalidateThreadHistory({ queryClient, threadId: "thread-1" });
