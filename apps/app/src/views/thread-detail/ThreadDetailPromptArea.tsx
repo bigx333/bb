@@ -1,5 +1,6 @@
 import { ThreadMachineStatus } from "@/components/promptbox/banner/ThreadMachineStatus";
 import { useRetainThreadMessage } from "@/hooks/useRetainThreadMessage";
+import { usePendingQueuedMessages } from "@/lib/pending-thread-messages";
 import {
   useCallback,
   useEffect,
@@ -456,7 +457,10 @@ export function ThreadDetailPromptArea({
   const queuedMessagesQuery = useThreadQueuedMessages(thread.id, {
     enabled: true,
   });
-  const queuedMessages = queuedMessagesQuery.data ?? EMPTY_QUEUED_MESSAGES;
+  const queuedMessages = usePendingQueuedMessages(
+    thread.id,
+    queuedMessagesQuery.data ?? EMPTY_QUEUED_MESSAGES,
+  );
   const queuedMessagesPending =
     queuedMessagesQuery.data === undefined && queuedMessageCount > 0;
   const queuedMessagesRef =

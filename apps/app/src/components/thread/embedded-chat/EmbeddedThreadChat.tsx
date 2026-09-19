@@ -56,6 +56,7 @@ import {
 import { useThreadDefaultExecutionOptions } from "@/hooks/queries/thread-default-execution-options-query";
 import { useSystemConfig } from "@/hooks/queries/system-queries";
 import { useRetainThreadMessage } from "@/hooks/useRetainThreadMessage";
+import { usePendingQueuedMessages } from "@/lib/pending-thread-messages";
 import {
   useCreateThreadQueuedMessage,
   useSendThreadMessage,
@@ -263,7 +264,11 @@ function EmbeddedThreadChatWithComposer({
     markThreadRead,
     thread: threadQuery.data,
   });
-  const { data: queuedMessages = [] } = useThreadQueuedMessages(threadId);
+  const { data: serverQueuedMessages } = useThreadQueuedMessages(threadId);
+  const queuedMessages = usePendingQueuedMessages(
+    threadId,
+    serverQueuedMessages,
+  );
 
   const executionOptionsQuery = useThreadDefaultExecutionOptions(
     composer.executionDefaultsThreadId,

@@ -1,7 +1,10 @@
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import { threadQueuedMessageSchema } from "@bb/domain";
+import {
+  threadQueuedMessageSchema,
+  type ThreadQueuedMessage,
+} from "@bb/domain";
 import { createQueuedMessageRequestSchema } from "@bb/server-contract";
 import {
   parsePromptDraftStorage,
@@ -86,6 +89,23 @@ export function usePendingThreadMessages(): readonly PendingThreadMessage[] {
     getPendingThreadMessages,
     getPendingThreadMessages,
   );
+}
+
+const emptyQueue: readonly ThreadQueuedMessage[] = [];
+export function usePendingQueuedMessages(
+  threadId: string,
+  serverRows: readonly ThreadQueuedMessage[] = emptyQueue,
+): readonly ThreadQueuedMessage[] {
+  const pending = usePendingThreadMessages();
+  return useMemo(() => {
+    const local = pending.filter((entry) => entry.request.id === threadId);
+    if (local.length === 0) return serverRows;
+    const ids = new Set(local.map((entry) => entry.row.id));
+    return [
+      ...serverRows.filter((row) => !ids.has(row.id)),
+      ...local.map((entry) => entry.row),
+    ];
+  }, [pending, threadId, serverRows]);
 }
 
 export function savePendingThreadMessage(entry: PendingThreadMessage): void {

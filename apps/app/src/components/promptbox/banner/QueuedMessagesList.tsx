@@ -800,7 +800,6 @@ const QueuedMessageRow = memo(function QueuedMessageRow({
   );
   sendDisabled ||= pending !== undefined;
   dragDisabled ||= pending !== undefined;
-  actionDisabled ||= pending !== undefined && pending.error === null;
   const deleteMessage = pending
     ? () => removePendingThreadMessage(queuedMessage.id)
     : () => onDelete(queuedMessage.id);
@@ -1047,7 +1046,10 @@ const QueuedMessageRow = memo(function QueuedMessageRow({
                         "shrink-0 text-muted-foreground hover:text-destructive max-md:text-destructive",
                         compact ? "size-7" : "size-8",
                       )}
-                      disabled={actionDisabled}
+                      disabled={
+                        actionDisabled ||
+                        (pending !== undefined && pending.error === null)
+                      }
                       onClick={deleteMessage}
                       aria-label={`Delete queued message ${index + 1}`}
                     >

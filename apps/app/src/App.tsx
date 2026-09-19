@@ -15,7 +15,6 @@ import { RouteNavigationIndicator } from "./components/ui/route-navigation-indic
 import { AppNavigationUrlHost } from "./lib/url-open-routing";
 import { NativeShellReporter } from "./lib/native-shell";
 import { UiPreferencesSync } from "@/lib/ui-preferences/UiPreferencesSync";
-import { PendingThreadMessagesSync } from "@/lib/PendingThreadMessagesSync";
 import { AppFileExternalNavigationHost } from "./components/plugin/AppFileExternalNavigationHost";
 import { useAppTheme } from "./hooks/useAppTheme";
 import { useFaviconColorSync } from "./lib/favicon-color-preference";
@@ -69,6 +68,12 @@ import { AppCommandProvider } from "./components/commands/AppCommandProvider";
 import { ProviderCliInstallLogDialogHost } from "./components/provider-cli/provider-cli-install";
 import { ServerMoveOverlay } from "./components/machines/ServerMoveOverlay";
 import { RouteLoadingSkeleton } from "./components/ui/route-loading-skeleton";
+
+const PendingThreadMessagesSync = lazy(() =>
+  import("@/lib/PendingThreadMessagesSync").then((module) => ({
+    default: module.PendingThreadMessagesSync,
+  })),
+);
 
 const SettingsView = lazy(() =>
   import("./views/SettingsView").then((m) => ({
@@ -434,7 +439,9 @@ export function App() {
               <HashNavigationScroll />
               <NativeShellReporter />
               <UiPreferencesSync />
-              <PendingThreadMessagesSync />
+              <Suspense fallback={null}>
+                <PendingThreadMessagesSync />
+              </Suspense>
               <Routes>
                 <Route
                   path={AUTH_CALLBACK_ROUTE_PATH}
