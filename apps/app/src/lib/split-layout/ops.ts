@@ -358,14 +358,14 @@ export function swapPanes(
     return layout;
   }
   if (isNewThreadComposerPane(pane) || isNewThreadComposerPane(targetPane)) {
-    function swapNodes(node: LayoutNode): LayoutNode {
+    const swapNodes = (node: LayoutNode): LayoutNode => {
       if (node.type === "pane") {
         if (node.paneId === paneId) return targetPane;
         if (node.paneId === targetPaneId) return pane;
         return node;
       }
       return { ...node, children: node.children.map(swapNodes) };
-    }
+    };
     return { root: swapNodes(layout.root), focusedPaneId: paneId };
   }
   const withFirstSwap = replacePaneNode(layout.root, paneId, {
