@@ -313,7 +313,7 @@ describe("ProjectDetailSettingsView", () => {
     expect(remove.getAttribute("aria-disabled")).toBe("true");
   });
 
-  it("shows derived thread defaults when the project has run threads", async () => {
+  it("keeps loaded thread defaults when a background refresh fails", async () => {
     stubSidebarBootstrapFetch([
       { hostId: "host_primary", path: "/Users/me/bb" },
     ]);
@@ -326,11 +326,20 @@ describe("ProjectDetailSettingsView", () => {
     };
     vi.mocked(sdk.projects.defaultExecutionOptions).mockResolvedValue(defaults);
 
-    renderView();
+    const { queryClient } = renderView();
 
     expect(await screen.findByText("gpt-6-astra")).toBeDefined();
     expect(screen.getByText("codex")).toBeDefined();
     expect(screen.queryByText(/^No threads have run here yet/u)).toBeNull();
+
+    vi.mocked(sdk.projects.defaultExecutionOptions).mockRejectedValue(
+      new Error("refresh failed"),
+    );
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    expect(screen.getByText("gpt-6-astra")).toBeDefined();
+    expect(screen.queryByText("Couldn't load thread defaults.")).toBeNull();
   });
 
   it("distinguishes a failed defaults load from an empty one", async () => {

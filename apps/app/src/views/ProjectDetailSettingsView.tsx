@@ -470,7 +470,7 @@ export function ProjectDetailSettingsView() {
           title="Thread defaults"
           description={DEFAULTS_DESCRIPTION}
         >
-          {defaultsQuery.isError ? (
+          {defaultsQuery.isError && defaultsQuery.data === undefined ? (
             <p className="text-sm text-destructive" role="alert">
               Couldn't load thread defaults.
             </p>
