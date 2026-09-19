@@ -16,10 +16,6 @@ import { getPromptDraftAccessor } from "@/hooks/usePromptDraftStorage";
 import { EmbeddedThreadChat } from "./EmbeddedThreadChat";
 
 const mocks = vi.hoisted(() => ({
-  createQueuedMessageIsPending: false,
-  durableEnabled: false,
-  serverConnected: true,
-  durableEnqueue: vi.fn(),
   createQueuedMessageMutateAsync: vi.fn(),
   markThreadReadMutate: vi.fn(),
   onOpenLink: vi.fn(),
@@ -56,21 +52,6 @@ const hostDraftMocks = vi.hoisted(() => ({
   subscribed: false,
 }));
 
-vi.mock("@/hooks/useDurableMessageSubmission", () => ({
-  useDurableMessageSubmission: () => ({
-    enabled: mocks.durableEnabled,
-    connected: mocks.serverConnected,
-    isSaving: false,
-    enqueue: mocks.durableEnqueue,
-  }),
-  isDurableMessageInput: () => true,
-}));
-
-vi.mock("@/hooks/useQueuedMessageRows", () => ({
-  useQueuedMessageRows: (_threadId: string, messages: readonly unknown[]) =>
-    messages,
-}));
-
 vi.mock("@/components/promptbox/FollowUpPromptBox", async () => {
   const { usePluginComposerHostDraft } =
     await import("@/components/plugin/plugin-composer-host");
@@ -99,12 +80,7 @@ vi.mock("@/components/promptbox/FollowUpPromptBox", async () => {
     }: {
       composer: Pick<
         FollowUpComposerProps,
-        | "message"
-        | "onChangeMessage"
-        | "onSubmit"
-        | "submitMode"
-        | "submitDisabled"
-        | "isFollowUpSubmitting"
+        "message" | "onChangeMessage" | "onSubmit" | "submitMode"
       >;
       pendingInteraction?: ReactNode;
       stack: ReactNode;
@@ -124,15 +100,10 @@ vi.mock("@/components/promptbox/FollowUpPromptBox", async () => {
           hidden={
             pendingInteraction !== undefined && pendingInteraction !== null
           }
-          readOnly={composer.isFollowUpSubmitting}
           value={composer.message}
           onChange={(event) => composer.onChangeMessage(event.target.value, [])}
         />
-        <button
-          type="button"
-          disabled={composer.submitDisabled}
-          onClick={composer.onSubmit}
-        >
+        <button type="button" onClick={composer.onSubmit}>
           Send
         </button>
         <BottomHostDraftProbe host={pluginComposerHost ?? null} />
@@ -335,7 +306,7 @@ vi.mock("@/hooks/mutations/thread-runtime-mutations", () => ({
   useCreateThreadQueuedMessage: () => ({
     mutateAsync: mocks.createQueuedMessageMutateAsync,
     mutate: vi.fn(),
-    isPending: mocks.createQueuedMessageIsPending,
+    isPending: false,
   }),
   useSendThreadMessage: () => ({
     mutateAsync: mocks.sendThreadMessageMutateAsync,
@@ -430,10 +401,6 @@ function renderEmbeddedChat(
 
 describe("EmbeddedThreadChat", () => {
   beforeEach(() => {
-    mocks.createQueuedMessageIsPending = false;
-    mocks.durableEnabled = false;
-    mocks.serverConnected = true;
-    mocks.durableEnqueue.mockReset().mockResolvedValue(undefined);
     window.localStorage.clear();
     mocks.createQueuedMessageMutateAsync.mockReset().mockResolvedValue({});
     mocks.sendThreadMessageMutateAsync.mockReset().mockResolvedValue({});
@@ -533,97 +500,6 @@ describe("EmbeddedThreadChat", () => {
     expect(mocks.injectedTimelineProps.at(-1)).toBeUndefined();
   });
 
-  it("disables idle Send while disconnected without locking the draft", () => {
-    mocks.durableEnabled = true;
-    mocks.serverConnected = false;
-    renderEmbeddedChat();
-    const composer = screen.getByTestId<HTMLInputElement>(
-      "embedded-chat-composer",
-    );
-    expect(
-      screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled,
-    ).toBe(true);
-    expect(composer.readOnly).toBe(false);
-    fireEvent.change(composer, { target: { value: "Keep writing offline" } });
-    expect(composer.value).toBe("Keep writing offline");
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    expect(mocks.durableEnqueue).not.toHaveBeenCalled();
-    expect(mocks.sendThreadMessageMutateAsync).not.toHaveBeenCalled();
-  });
-
-  it("hands an offline busy-thread submission to durable storage and permits the next draft after local save", async () => {
-    mocks.durableEnabled = true;
-    mocks.serverConnected = false;
-    mocks.threadRuntimeDisplayStatus = "active";
-    const saved = createDeferredPromise<void>();
-    mocks.durableEnqueue.mockReturnValueOnce(saved.promise);
-    renderEmbeddedChat();
-    fireEvent.change(screen.getByTestId("embedded-chat-composer"), {
-      target: { value: "Deliver after reconnect" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    expect(mocks.durableEnqueue).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "queue",
-        request: expect.objectContaining({
-          input: [
-            { type: "text", text: "Deliver after reconnect", mentions: [] },
-          ],
-        }),
-      }),
-      expect.objectContaining({
-        storageKey: expect.any(String),
-        value: {
-          text: "Deliver after reconnect",
-          mentions: [],
-          attachments: [],
-        },
-      }),
-    );
-    expect(
-      screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
-    ).toBe("Deliver after reconnect");
-    expect(mocks.createQueuedMessageMutateAsync).not.toHaveBeenCalled();
-    expect(mocks.sendThreadMessageMutateAsync).not.toHaveBeenCalled();
-    await act(async () => {
-      getPromptDraftAccessor({
-        kind: "thread",
-        projectId: "proj-1",
-        threadId: "thr_child",
-      }).setDraft({ text: "", mentions: [], attachments: [] });
-      saved.resolve();
-    });
-    const composer = screen.getByTestId<HTMLInputElement>(
-      "embedded-chat-composer",
-    );
-    expect(composer.readOnly).toBe(false);
-    fireEvent.change(composer, { target: { value: "The next draft" } });
-    expect(composer.value).toBe("The next draft");
-  });
-
-  it("retains an offline queued draft when durable persistence fails", async () => {
-    mocks.durableEnabled = true;
-    mocks.serverConnected = false;
-    mocks.threadRuntimeDisplayStatus = "active";
-    mocks.durableEnqueue.mockRejectedValueOnce(
-      new Error("Message storage is full"),
-    );
-    renderEmbeddedChat();
-    fireEvent.change(screen.getByTestId("embedded-chat-composer"), {
-      target: { value: "Must stay in the prompt" },
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    });
-    const composer = screen.getByTestId<HTMLInputElement>(
-      "embedded-chat-composer",
-    );
-    expect(composer.value).toBe("Must stay in the prompt");
-    expect(composer.readOnly).toBe(false);
-    expect(mocks.createQueuedMessageMutateAsync).not.toHaveBeenCalled();
-    expect(mocks.sendThreadMessageMutateAsync).not.toHaveBeenCalled();
-  });
-
   it("queues the submitted draft itself while the thread runtime is active", async () => {
     mocks.threadRuntimeDisplayStatus = "active";
     renderEmbeddedChat();
@@ -643,56 +519,37 @@ describe("EmbeddedThreadChat", () => {
       }),
     );
     expect(mocks.sendThreadMessageMutateAsync).not.toHaveBeenCalled();
+    expect(
+      screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
+    ).toBe("");
+  });
+
+  it("keeps a queued draft when the request fails after the composer closes", async () => {
+    mocks.threadRuntimeDisplayStatus = "active";
+    const pending = createDeferredPromise<void>();
+    mocks.createQueuedMessageMutateAsync.mockReturnValueOnce(pending.promise);
+    const first = renderEmbeddedChat();
+    fireEvent.change(screen.getByTestId("embedded-chat-composer"), {
+      target: { value: "Do not lose this" },
+    });
+    fireEvent.click(screen.getByText("Send"));
+    expect(
+      screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
+    ).toBe("Do not lose this");
+    first.unmount();
+    await act(async () => {
+      pending.reject(new Error("Connection lost"));
+    });
+    renderEmbeddedChat();
+    expect(
+      screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
+    ).toBe("Do not lose this");
+    fireEvent.click(screen.getByText("Send"));
     await vi.waitFor(() => {
       expect(
         screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
       ).toBe("");
     });
-  });
-
-  it.each(["active", "idle"] as const)(
-    "preserves a pending draft through unmount and network failure when %s",
-    async (status) => {
-      const submission = createDeferredPromise<void>();
-      const submit =
-        status === "active"
-          ? mocks.createQueuedMessageMutateAsync
-          : mocks.sendThreadMessageMutateAsync;
-      submit.mockReturnValueOnce(submission.promise);
-      mocks.threadRuntimeDisplayStatus = status;
-      const view = renderEmbeddedChat();
-      fireEvent.change(screen.getByTestId("embedded-chat-composer"), {
-        target: { value: "Do not lose this message" },
-      });
-      fireEvent.click(screen.getByText("Send"));
-
-      expect(
-        screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
-      ).toBe("Do not lose this message");
-      view.unmount();
-      await act(async () => {
-        submission.reject(new TypeError("Failed to fetch"));
-      });
-      renderEmbeddedChat();
-      expect(
-        screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
-      ).toBe("Do not lose this message");
-    },
-  );
-
-  it("does not resubmit a draft while another composer owns its pending request", () => {
-    mocks.createQueuedMessageIsPending = true;
-    mocks.threadRuntimeDisplayStatus = "active";
-    renderEmbeddedChat();
-    fireEvent.change(screen.getByTestId("embedded-chat-composer"), {
-      target: { value: "Already submitting" },
-    });
-    fireEvent.click(screen.getByText("Send"));
-    expect(mocks.createQueuedMessageMutateAsync).not.toHaveBeenCalled();
-    expect(mocks.sendThreadMessageMutateAsync).not.toHaveBeenCalled();
-    expect(
-      screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
-    ).toBe("Already submitting");
   });
 
   it("sends directly when the thread runtime is idle", async () => {

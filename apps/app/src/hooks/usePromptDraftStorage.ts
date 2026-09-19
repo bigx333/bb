@@ -23,7 +23,6 @@ export type PromptDraftScope =
 interface PromptDraftCacheEntry {
   rawValue: string | null;
   draft: PromptDraftState;
-  submissionHandoffId?: string;
 }
 
 type PromptDraftListener = () => void;
@@ -62,7 +61,6 @@ function readPromptDraft(storageKey: string | null): PromptDraftState {
   promptDraftCache.set(storageKey, {
     rawValue,
     draft,
-    submissionHandoffId: readSubmissionHandoffId(rawValue),
   });
   return draft;
 }
@@ -96,10 +94,7 @@ function persistPromptDraftCache(storageKey: string): void {
     return;
   }
 
-  const serialized = serializePromptDraftEnvelope(
-    cachedEntry.draft,
-    cachedEntry.submissionHandoffId,
-  );
+  const serialized = serializePromptDraftStorage(cachedEntry.draft);
   cachedEntry.rawValue = serialized;
   if (serialized === null) {
     window.localStorage.removeItem(storageKey);
@@ -197,107 +192,16 @@ function writePromptDraft(
 ): void {
   if (!storageKey || typeof window === "undefined") return;
 
-  const cachedEntry = promptDraftCache.get(storageKey);
-  const hadHandoff =
-    (cachedEntry
-      ? cachedEntry.submissionHandoffId
-      : readSubmissionHandoffId(readStoredPromptDraftValue(storageKey))) !==
-    undefined;
   promptDraftCache.set(storageKey, {
     rawValue: null,
     draft: isPromptDraftEmpty(value) ? EMPTY_PROMPT_DRAFT : value,
   });
-  if (options.persist === "deferred" && !hadHandoff) {
+  if (options.persist === "deferred") {
     schedulePromptDraftPersist(storageKey);
   } else {
     persistPromptDraftCache(storageKey);
   }
   emitPromptDraftChange(storageKey);
-}
-
-function readSubmissionHandoffId(rawValue: string | null): string | undefined {
-  if (rawValue === null) return undefined;
-  try {
-    const value: unknown = JSON.parse(rawValue);
-    if (
-      typeof value === "object" &&
-      value !== null &&
-      "submissionHandoffId" in value &&
-      typeof value.submissionHandoffId === "string"
-    )
-      return value.submissionHandoffId;
-  } catch {
-    return undefined;
-  }
-  return undefined;
-}
-
-function serializePromptDraftEnvelope(
-  draft: PromptDraftState,
-  submissionHandoffId?: string,
-): string | null {
-  if (submissionHandoffId === undefined)
-    return serializePromptDraftStorage(draft);
-  return JSON.stringify({
-    text: draft.text,
-    mentions: draft.mentions,
-    attachments: draft.attachments,
-    submissionHandoffId,
-  });
-}
-
-export function preparePromptDraftSubmission(
-  storageKey: string,
-  draft: PromptDraftState,
-  submissionHandoffId: string,
-): void {
-  if (!arePromptDraftStatesEqual(readPromptDraft(storageKey), draft))
-    throw new Error("The draft changed before it could be saved.");
-  const serialized = serializePromptDraftEnvelope(draft, submissionHandoffId);
-  if (serialized === null)
-    throw new Error("An empty draft cannot be submitted.");
-  clearPromptDraftPersistTimer(storageKey);
-  pendingPromptDraftStorageKeys.add(storageKey);
-  window.localStorage.setItem(storageKey, serialized);
-  if (window.localStorage.getItem(storageKey) !== serialized)
-    throw new Error(
-      "The draft could not be saved. Your message has not been sent.",
-    );
-  promptDraftCache.set(storageKey, {
-    draft,
-    rawValue: serialized,
-    submissionHandoffId,
-  });
-  pendingPromptDraftStorageKeys.delete(storageKey);
-  emitPromptDraftChange(storageKey);
-}
-
-export function completePromptDraftSubmission(
-  storageKey: string,
-  draft: PromptDraftState,
-  submissionHandoffId: string,
-): "cleared" | "preserved" {
-  const currentDraft = readPromptDraft(storageKey);
-  const rawValue = window.localStorage.getItem(storageKey);
-  if (
-    promptDraftCache.get(storageKey)?.submissionHandoffId !==
-      submissionHandoffId ||
-    readSubmissionHandoffId(rawValue) !== submissionHandoffId ||
-    !arePromptDraftStatesEqual(currentDraft, draft) ||
-    !arePromptDraftStatesEqual(parsePromptDraftStorage(rawValue), draft)
-  )
-    return "preserved";
-  clearPromptDraftPersistTimer(storageKey);
-  window.localStorage.removeItem(storageKey);
-  if (window.localStorage.getItem(storageKey) !== null)
-    throw new Error("The saved draft could not be cleared.");
-  pendingPromptDraftStorageKeys.delete(storageKey);
-  promptDraftCache.set(storageKey, {
-    draft: EMPTY_PROMPT_DRAFT,
-    rawValue: null,
-  });
-  emitPromptDraftChange(storageKey);
-  return "cleared";
 }
 
 function restorePromptDraftIfEmpty(
@@ -647,11 +551,4 @@ export function usePromptDraftInputThreadIds(
     });
     return threadIds;
   }, [presenceSnapshot, subscriptions]);
-}
-
-export function getPromptDraftSubmissionHandoff(
-  storageKey: string,
-): string | undefined {
-  readPromptDraft(storageKey);
-  return promptDraftCache.get(storageKey)?.submissionHandoffId;
 }

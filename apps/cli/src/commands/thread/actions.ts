@@ -69,7 +69,6 @@ interface ThreadDeleteCommandOptions {
 }
 
 interface ThreadTellCommandOptions {
-  submissionId?: string;
   json?: boolean;
   messageFile?: string;
   model?: string;
@@ -107,7 +106,6 @@ interface ThreadEditMessageCommandOptions {
 type ThreadTellDeliveryMode = "auto" | "queue" | "steer";
 
 interface PostThreadMessageArgs {
-  clientSubmissionId?: string;
   getUrl: () => string;
   threadId: string;
   message: string;
@@ -443,10 +441,6 @@ export function registerActionsCommands(
     .aliases(["message", "send"])
     .description("Send a follow-up message to a thread")
     .option(
-      "--submission-id <id>",
-      "Stable ID for retrying an ordinary follow-up without duplicate admission",
-    )
-    .option(
       "--message-file <path>",
       `Read the message from a file instead of [message]; ${TEXT_FILE_HELP_SUFFIX}`,
     )
@@ -490,14 +484,10 @@ export function registerActionsCommands(
             inlineLabel: "<message>",
           });
           const response = await postThreadMessage({
-            clientSubmissionId: opts.submissionId,
             getUrl,
             threadId: id,
             message,
-            mode:
-              opts.submissionId !== undefined && opts.mode === undefined
-                ? "queue"
-                : resolveThreadMessageMode(opts.mode),
+            mode: resolveThreadMessageMode(opts.mode),
             model: opts.model,
             permissionMode: parsePermissionMode(opts.permissionMode),
             reasoningLevel: parseReasoningLevel(opts.reasoningLevel),
@@ -614,9 +604,6 @@ async function postThreadMessage(
     sdk,
   });
   const response = await sdk.threads.send({
-    ...(args.clientSubmissionId === undefined
-      ? {}
-      : { clientSubmissionId: args.clientSubmissionId }),
     threadId: args.threadId,
     input,
     mode:

@@ -19,7 +19,6 @@ import { ApiError } from "../../errors.js";
 import { resolveDispatchAuthor } from "./dispatch-author.js";
 
 interface StoredQueuedThreadMessageRow {
-  clientSubmissionId?: string | null;
   origin: ThreadCreateOrigin | null;
   originPluginId: string | null;
   claimedAt: number | null;
@@ -170,9 +169,6 @@ export function toThreadQueuedMessage(
         });
   return threadQueuedMessageSchema.parse({
     id: row.id,
-    ...(row.clientSubmissionId == null
-      ? {}
-      : { clientSubmissionId: row.clientSubmissionId }),
     origin: row.origin,
     originPluginId: row.originPluginId,
     initiator: author.initiator,

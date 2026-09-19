@@ -335,11 +335,7 @@ export const threadPullRequestSchema = z
   .strict();
 export type ThreadPullRequest = z.infer<typeof threadPullRequestSchema>;
 
-export const clientSubmissionIdSchema = z.string().min(1).max(128);
-
 export const threadQueuedMessageSchema = z.object({
-  clientSubmissionId: clientSubmissionIdSchema.optional(),
-  replayed: z.boolean().optional(),
   id: z.string(),
   origin: threadCreateOriginSchema.nullable(),
   originPluginId: z.string().nullable(),

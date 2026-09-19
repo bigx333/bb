@@ -1,10 +1,4 @@
 import {
-  acceptThreadSubmission,
-  withThreadSubmissionReceipt,
-  requireOrdinarySubmission,
-  type ThreadSubmissionReceipt,
-} from "./thread-submission-receipts.js";
-import {
   claimNextQueuedThreadMessageGroup,
   claimQueuedThreadMessageGroup,
   createQueuedThreadMessageInTransaction,
@@ -152,10 +146,7 @@ export function createAutomaticQueuedMessageGroupEligibility(
         case "thread-busy":
         case "stopping":
           return (
-            args.thread.status === "idle" ||
-            args.thread.status === "pending" ||
-            (args.thread.status === "error" &&
-              member.clientSubmissionId !== null)
+            args.thread.status === "idle" || args.thread.status === "pending"
           );
         case "turn-starting":
           return (
@@ -225,35 +216,7 @@ export async function createQueuedMessageForThread(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: CreateQueuedMessageForThreadArgs,
 ): Promise<ThreadQueuedMessage> {
-  const response = await withThreadSubmissionReceipt(
-    deps.db,
-    {
-      threadId: args.thread.id,
-      operation: "queue",
-      payload: args.payload,
-    },
-    async (submission) => ({
-      ok: true,
-      delivery: "queued",
-      queuedMessage: await createQueuedMessageForThreadOnce(
-        deps,
-        args,
-        submission,
-      ),
-    }),
-  );
-  if (response.delivery !== "queued")
-    throw new Error("Invalid queued submission receipt");
-  return response.queuedMessage;
-}
-
-async function createQueuedMessageForThreadOnce(
-  deps: LoggedPendingInteractionWorkSessionDeps,
-  args: CreateQueuedMessageForThreadArgs,
-  submission: ThreadSubmissionReceipt | undefined,
-): Promise<ThreadQueuedMessage> {
   const { payload, thread } = args;
-  if (submission !== undefined) requireOrdinarySubmission(payload.input);
   ensureThreadQueueIsWritable(thread);
   await validatePromptAttachmentReferences({
     db: deps.db,
@@ -270,52 +233,39 @@ async function createQueuedMessageForThreadOnce(
   });
   const { currentThread, hasProviderSession, queuedMessage } =
     deps.db.transaction(
-      (tx) =>
-        acceptThreadSubmission(
-          tx,
-          submission,
-          () => {
-            const currentThread = getThread(tx, thread.id);
-            if (!currentThread) {
-              throw new ApiError(404, "thread_not_found", "Thread not found");
-            }
-            const { hasProviderSession } = admitQueuedMessage(
-              tx,
-              currentThread,
-            );
-            const queuedMessage = createQueuedThreadMessageInTransaction(tx, {
-              clientSubmissionId: submission?.id,
-              threadId: thread.id,
-              content: payload.input,
-              senderThreadId,
-              model: execution.model,
-              reasoningLevel: execution.reasoningLevel,
-              permissionMode: execution.permissionMode,
-              serviceTier: execution.serviceTier,
-              // An explicit "queue this" is a message waiting for the running turn
-              // to end, which is exactly `thread-busy`. Naming it rather than
-              // leaving the wait null keeps every row on one vocabulary, and the
-              // idle drain treats the two identically anyway.
-              //
-              // Queued while the thread is stopping, it is instead a message the
-              // user composed AFTER asking for the stop, so it carries `stopping`
-              // and runs when the stop lands rather than joining the rows the
-              // manual-stop pause holds back.
-              waitingOn:
-                currentThread.status === "stopping"
-                  ? { kind: "stopping" }
-                  : { kind: "thread-busy" },
-              sendAt: null,
-              payload: { kind: "inline" },
-              systemNotice: null,
-            });
-            return { currentThread, hasProviderSession, queuedMessage };
-          },
-          (accepted) => ({
-            delivery: "queued",
-            queuedMessage: toThreadQueuedMessage(accepted.queuedMessage),
-          }),
-        ),
+      (tx) => {
+        const currentThread = getThread(tx, thread.id);
+        if (!currentThread) {
+          throw new ApiError(404, "thread_not_found", "Thread not found");
+        }
+        const { hasProviderSession } = admitQueuedMessage(tx, currentThread);
+        const queuedMessage = createQueuedThreadMessageInTransaction(tx, {
+          threadId: thread.id,
+          content: payload.input,
+          senderThreadId,
+          model: execution.model,
+          reasoningLevel: execution.reasoningLevel,
+          permissionMode: execution.permissionMode,
+          serviceTier: execution.serviceTier,
+          // An explicit "queue this" is a message waiting for the running turn
+          // to end, which is exactly `thread-busy`. Naming it rather than
+          // leaving the wait null keeps every row on one vocabulary, and the
+          // idle drain treats the two identically anyway.
+          //
+          // Queued while the thread is stopping, it is instead a message the
+          // user composed AFTER asking for the stop, so it carries `stopping`
+          // and runs when the stop lands rather than joining the rows the
+          // manual-stop pause holds back.
+          waitingOn:
+            currentThread.status === "stopping"
+              ? { kind: "stopping" }
+              : { kind: "thread-busy" },
+          sendAt: null,
+          payload: { kind: "inline" },
+          systemNotice: null,
+        });
+        return { currentThread, hasProviderSession, queuedMessage };
+      },
       { behavior: "immediate" },
     );
   deps.hub.notifyThread(thread.id, ["queue-changed"]);
@@ -326,11 +276,7 @@ async function createQueuedMessageForThreadOnce(
       providerId: thread.providerId,
     });
   }
-  if (
-    (currentThread.status === "idle" && hasProviderSession) ||
-    (submission !== undefined &&
-      ["idle", "error", "pending"].includes(currentThread.status))
-  ) {
+  if (currentThread.status === "idle" && hasProviderSession) {
     requestQueuedMessageDispatch(deps, {
       kind: "thread-ready",
       threadId: thread.id,
@@ -752,11 +698,6 @@ async function sendClaimedQueuedMessageForThread(
         lead.senderThreadId,
       ),
       ...(inputGroups.length > 1 ? { inputGroups } : {}),
-      ...(args.mode === "auto" &&
-      !args.sendNow &&
-      queuedMessages.some((entry) => entry.clientSubmissionId !== undefined)
-        ? { mode: "queue-if-active" as const }
-        : {}),
     },
     source: {
       kind: "drain",

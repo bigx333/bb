@@ -453,6 +453,47 @@ describe("thread runtime mutations", () => {
     ).toEqual([]);
   });
 
+  it("keeps queue submission pending across remounts and permits retry after failure", async () => {
+    const { wrapper } = createQueryClientTestHarness();
+    const pending = createDeferredPromise<ThreadQueuedMessage>();
+    vi.mocked(sdk.threads.queuedMessages.create).mockReturnValueOnce(
+      pending.promise,
+    );
+    const first = renderHook(() => useCreateThreadQueuedMessage("thread-1"), {
+      wrapper,
+    });
+    const request = {
+      id: "thread-1",
+      input: [{ type: "text" as const, text: "Keep me", mentions: [] }],
+    };
+    let sent: Promise<unknown>;
+    act(() => {
+      sent = first.result.current.mutateAsync(request).catch((error) => error);
+    });
+    await waitFor(() =>
+      expect(sdk.threads.queuedMessages.create).toHaveBeenCalledTimes(1),
+    );
+    first.unmount();
+    const reopened = renderHook(
+      () => useCreateThreadQueuedMessage("thread-1"),
+      { wrapper },
+    );
+    expect(reopened.result.current.isPending).toBe(true);
+    await expect(reopened.result.current.mutateAsync(request)).rejects.toThrow(
+      "still being queued",
+    );
+    expect(sdk.threads.queuedMessages.create).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      pending.reject(new Error("Connection lost"));
+      await sent;
+    });
+    await waitFor(() => expect(reopened.result.current.isPending).toBe(false));
+    await act(async () => {
+      await reopened.result.current.mutateAsync(request);
+    });
+    expect(sdk.threads.queuedMessages.create).toHaveBeenCalledTimes(2);
+  });
+
   it("forwards execution input sources and sender thread when queueing a message", async () => {
     const { wrapper } = createQueryClientTestHarness();
     const { result } = renderHook(() => useCreateThreadQueuedMessage(), {
@@ -476,68 +517,6 @@ describe("thread runtime mutations", () => {
       }),
     );
   });
-
-  it.each([
-    ["send", "accepted"],
-    ["send", "failed"],
-    ["queue", "accepted"],
-    ["queue", "failed"],
-  ] as const)(
-    "shares a pending %s submission across remounts until it is %s",
-    async (kind, outcome) => {
-      const { wrapper } = createQueryClientTestHarness();
-      const submission = createDeferredPromise<void>();
-      if (kind === "send") {
-        vi.mocked(sdk.threads.send).mockImplementationOnce(async () => {
-          await submission.promise;
-          return { ok: true, delivery: "sent" };
-        });
-      } else {
-        vi.mocked(sdk.threads.queuedMessages.create).mockImplementationOnce(
-          async () => {
-            await submission.promise;
-            return makeQueuedMessage();
-          },
-        );
-      }
-      const useSubmission =
-        kind === "send" ? useSendThreadMessage : useCreateThreadQueuedMessage;
-      const sendRequest =
-        kind === "send" ? sdk.threads.send : sdk.threads.queuedMessages.create;
-      const first = renderHook(() => useSubmission("thread-1"), { wrapper });
-      const request = {
-        id: "thread-1",
-        mode: "auto" as const,
-        input: [
-          { type: "text" as const, text: "Keep this draft", mentions: [] },
-        ],
-      };
-      act(() => {
-        void first.result.current.mutateAsync(request).catch(() => undefined);
-      });
-      await waitFor(() => expect(sendRequest).toHaveBeenCalledTimes(1));
-      first.unmount();
-
-      const reopened = renderHook(() => useSubmission("thread-1"), { wrapper });
-      const unrelated = renderHook(() => useSubmission("thread-2"), {
-        wrapper,
-      });
-      expect(reopened.result.current.isPending).toBe(true);
-      expect(unrelated.result.current.isPending).toBe(false);
-
-      await act(async () => {
-        if (outcome === "accepted") submission.resolve();
-        else submission.reject(new TypeError("Failed to fetch"));
-      });
-      await waitFor(() =>
-        expect(reopened.result.current.isPending).toBe(false),
-      );
-      await act(async () => {
-        await reopened.result.current.mutateAsync(request);
-      });
-      expect(sendRequest).toHaveBeenCalledTimes(2);
-    },
-  );
 
   it("keeps an optimistically deleted queued message removed when the server says it is already gone", async () => {
     const { queryClient, wrapper } = createQueryClientTestHarness();

@@ -1,8 +1,4 @@
 import {
-  acceptThreadSubmission,
-  type ThreadSubmissionReceipt,
-} from "./thread-submission-receipts.js";
-import {
   clearQueuedThreadMessageWaitingOn,
   createQueuedThreadMessageInTransaction,
   requeueClaimedQueuedThreadMessages,
@@ -65,7 +61,6 @@ export interface SettleQueueRowArgs {
 
 /** The message a queued row will carry, as the queueing site supplies it. */
 export interface QueuedDispatchMessage {
-  submission?: ThreadSubmissionReceipt;
   input: PromptInput[];
   execution: ResolvedThreadExecutionOptions;
   senderThreadId: string | null;
@@ -124,32 +119,22 @@ export function recordQueuedMessageWait(
   if (leadClaim === undefined) {
     row = deps.db.transaction(
       (tx) =>
-        acceptThreadSubmission(
-          tx,
-          args.message.submission,
-          () =>
-            createQueuedThreadMessageInTransaction(tx, {
-              clientSubmissionId: args.message.submission?.id,
-              threadId: args.thread.id,
-              content: args.message.input,
-              senderThreadId: args.message.senderThreadId,
-              origin: args.message.origin,
-              originPluginId: args.message.originPluginId,
-              requestedBy: args.message.requestedBy,
-              model: args.message.execution.model,
-              reasoningLevel: args.message.execution.reasoningLevel,
-              permissionMode: args.message.execution.permissionMode,
-              serviceTier: args.message.execution.serviceTier,
-              waitingOn: args.waitingOn,
-              sendAt: args.sendAt,
-              payload: args.message.payload,
-              systemNotice: args.message.systemNotice,
-            }),
-          (row) => ({
-            delivery: "queued",
-            queuedMessage: toThreadQueuedMessage(row),
-          }),
-        ),
+        createQueuedThreadMessageInTransaction(tx, {
+          threadId: args.thread.id,
+          content: args.message.input,
+          senderThreadId: args.message.senderThreadId,
+          origin: args.message.origin,
+          originPluginId: args.message.originPluginId,
+          requestedBy: args.message.requestedBy,
+          model: args.message.execution.model,
+          reasoningLevel: args.message.execution.reasoningLevel,
+          permissionMode: args.message.execution.permissionMode,
+          serviceTier: args.message.execution.serviceTier,
+          waitingOn: args.waitingOn,
+          sendAt: args.sendAt,
+          payload: args.message.payload,
+          systemNotice: args.message.systemNotice,
+        }),
       { behavior: "immediate" },
     );
   } else {

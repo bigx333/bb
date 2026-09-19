@@ -49,22 +49,9 @@ interface OptionalServerFieldGroup {
   reason: string;
 }
 
-const OPTIONAL_SERVER_FIELD_GROUP_LIMIT = 46;
+const OPTIONAL_SERVER_FIELD_GROUP_LIMIT = 45;
 
 const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
-  {
-    reason:
-      "Submission correlation fields are absent on older servers and requests without a client submission ID; replayed appears only on a receipt replay.",
-    fields: [
-      "createQueuedMessageRequestSchema.clientSubmissionId",
-      "sendMessageRequestSchema.clientSubmissionId",
-      "sendQueuedMessageResponseSchema.clientSubmissionId",
-      "sendQueuedMessageResponseSchema.replayed",
-      "sendQueuedMessageResponseSchema.turnRequestId",
-      "sendQueuedMessageResponseSchema.queuedMessage.clientSubmissionId",
-      "sendQueuedMessageResponseSchema.queuedMessage.replayed",
-    ],
-  },
   {
     reason:
       "A submitted plugin form leaves on its row only what the plugin's describeSubmission returned, and the whole description is absent when the plugin declares no describeSubmission or when that call throws or times out. Within one, an absent title means the presentation's completed label stands, an absent detail means the title is the whole row, and an absent payload means the row renders without handing anything to the plugin's own timeline renderer. bb never stores the form's payload or the submitted value, so these fields are the entire record of what happened.",
@@ -1120,36 +1107,6 @@ describe("server-contract canonical schemas", () => {
         ownsPath: false,
       }),
     ).toMatchObject({ ownsPath: false });
-  });
-
-  it("accepts optional bounded nanoid submission IDs and legacy response shapes", () => {
-    for (const schema of [
-      sendMessageRequestSchema,
-      createQueuedMessageRequestSchema,
-    ]) {
-      const payload = {
-        input: [{ type: "text", text: "keep this" }],
-        mode: "start",
-      };
-      expect(schema.parse(payload)).not.toHaveProperty("clientSubmissionId");
-      expect(
-        schema.parse({ ...payload, clientSubmissionId: "nanoid_With-dashes" }),
-      ).toHaveProperty("clientSubmissionId", "nanoid_With-dashes");
-      for (const clientSubmissionId of ["", "x".repeat(129)])
-        expect(() =>
-          schema.parse({ ...payload, clientSubmissionId }),
-        ).toThrow();
-    }
-    expect(
-      contract.sendMessageResponseSchema.parse({ ok: true, delivery: "sent" }),
-    ).toEqual({ ok: true, delivery: "sent" });
-    expect(() =>
-      contract.editMessageRequestSchema.parse({
-        operationId: "edit",
-        input: [{ type: "text", text: "edit" }],
-        clientSubmissionId: "not-supported",
-      }),
-    ).toThrow();
   });
 
   it("parses request contracts", () => {

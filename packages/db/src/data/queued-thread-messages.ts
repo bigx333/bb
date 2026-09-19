@@ -54,7 +54,6 @@ import { createOrderKeyAfter, createOrderKeyBetween } from "./order-keys.js";
 import { queryInSqliteVariableBatches } from "./events.js";
 
 export interface CreateQueuedThreadMessageInput {
-  clientSubmissionId?: string;
   threadId: string;
   content: PromptInput[];
   senderThreadId?: string | null;
@@ -619,7 +618,6 @@ export function createQueuedThreadMessageInTransaction(
     .values({
       id,
       threadId: input.threadId,
-      clientSubmissionId: input.clientSubmissionId ?? null,
       content: JSON.stringify(input.content),
       senderThreadId: input.senderThreadId ?? null,
       origin: input.origin ?? null,

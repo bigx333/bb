@@ -1260,12 +1260,10 @@ export function PromptBoxInternal({
     items: attachments = [],
     isAttaching = false,
     error: attachmentError = null,
-    onAttachFiles: attachFiles,
-    onRemove: removeAttachment,
+    onAttachFiles,
+    onRemove: onRemoveAttachment,
     projectId: attachmentProjectId,
   } = attachmentConfig;
-  const onAttachFiles = isSubmitting ? undefined : attachFiles;
-  const onRemoveAttachment = isSubmitting ? undefined : removeAttachment;
   const isPointerCoarse = usePointerCoarse();
   const isIPadOSWebKitDevice = useMemo(isIPadOSWebKit, []);
   const editorEnterKeyHint = isPointerCoarse ? "enter" : "send";
@@ -1464,10 +1462,9 @@ export function PromptBoxInternal({
     ? (compact.placeholder ?? placeholder)
     : placeholder;
   const pluginComposerHost = usePluginComposerHost();
-  const pluginInputLocked = useComposerInputLock(
+  const composerInputLocked = useComposerInputLock(
     pluginComposerHost?.textEffectKey ?? null,
   );
-  const composerInputLocked = pluginInputLocked || isSubmitting;
   const composerLayout = showCompactLayout ? "compact" : "expanded";
   const localComposerView = usePluginComposerViewModel({
     scope: pluginComposerHost?.scope ?? DEFAULT_COMPOSER_SCOPE,
@@ -1901,10 +1898,10 @@ export function PromptBoxInternal({
     [richTextEditing],
   );
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!editor || editor.isDestroyed) return;
     const editable = !composerInputLocked && !showVoiceActionGroup;
-    if (editor.isEditable !== editable) editor.setEditable(editable, false);
+    if (editor.isEditable !== editable) editor.setEditable(editable);
     editor.view.dom.tabIndex = editable ? 0 : -1;
     if (editable) {
       editor.view.dom.removeAttribute("aria-readonly");
@@ -2793,7 +2790,7 @@ export function PromptBoxInternal({
 
   const applyHistoryDraft = useCallback(
     (draft: PromptDraftState) => {
-      if (!history || isSubmitting) {
+      if (!history) {
         return;
       }
 
@@ -2809,7 +2806,7 @@ export function PromptBoxInternal({
         scheduleRevealEditorSelection();
       });
     },
-    [history, isSubmitting, scheduleRevealEditorSelection, syncTriggerState],
+    [history, scheduleRevealEditorSelection, syncTriggerState],
   );
 
   const collapsePromptBox = useCallback(() => {
@@ -2857,7 +2854,6 @@ export function PromptBoxInternal({
       ) {
         return false;
       }
-      if (isSubmitting) return false;
       if (dispatchAppCommandKey(event)) {
         return true;
       }
@@ -3085,7 +3081,6 @@ export function PromptBoxInternal({
       dismissActiveTrigger,
       history,
       isPointerCoarse,
-      isSubmitting,
       loadMoreCommands,
       onEscape,
       onModifierSubmit,

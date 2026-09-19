@@ -1,8 +1,4 @@
 import {
-  acceptThreadSubmission,
-  type ThreadSubmissionReceipt,
-} from "./thread-submission-receipts.js";
-import {
   getEnvironment,
   getThread,
   requireThreadLifecycleEventApplied,
@@ -91,7 +87,6 @@ type SendThreadMessagePayload = SendMessageRequest & {
 };
 
 interface SendThreadMessageArgs {
-  submission?: ThreadSubmissionReceipt;
   beforeAppendInTransaction?: SendThreadMessageTransactionPreflight;
   /**
    * Present only when this send re-submits a failed turn. Marks the turn event
@@ -148,7 +143,6 @@ interface SendThreadMessageQueueRequest {
 }
 
 interface AppendAndQueueSendThreadMessageArgs {
-  submission?: ThreadSubmissionReceipt;
   /** Retry provenance; absent for an original dispatch. */
   retryOf?: TurnRequestRetryMarker;
   beforeAppendInTransaction?: SendThreadMessageTransactionPreflight;
@@ -400,7 +394,6 @@ export function captureUserMessageSentTelemetry(
 }
 
 function appendAndQueueSendThreadMessageInTransaction({
-  submission,
   retryOf,
   beforeAppendInTransaction,
   db,
@@ -417,50 +410,44 @@ function appendAndQueueSendThreadMessageInTransaction({
 }: AppendAndQueueSendThreadMessageArgs): AppendAndQueueSendThreadMessageResult {
   let activeThread: Thread | null = null;
   const request = db.transaction(
-    (tx) =>
-      acceptThreadSubmission(
-        tx,
-        submission,
-        () => {
-          beforeAppendInTransaction?.({ tx });
-          const appended =
-            appendPreparedClientTurnRequestedEventWithNotificationInTransaction(
-              tx,
-              {
-                threadId: thread.id,
-                environmentId,
-                type: "client/turn/requested",
-                ...(retryOf !== undefined ? { retryOf } : {}),
-                input,
-                ...(inputGroups !== undefined ? { inputGroups } : {}),
-                execution,
-                initiator,
-                senderThreadId,
-                requestMethod: "turn/start",
-                source: "tell",
-                target,
-                requestId,
-              },
-            );
-          recordAcceptedPromptHistoryEntry(
-            { db: tx },
-            {
-              thread,
-              input,
-              initiator,
-              target,
-              requestSequence: appended.sequence,
-            },
-          );
-          const queueResult = queueInTransaction({
-            requestEventSequence: appended.sequence,
-            tx,
-          });
-          activeThread = queueResult.activeThread;
-          return appended;
+    (tx) => {
+      beforeAppendInTransaction?.({ tx });
+      const appended =
+        appendPreparedClientTurnRequestedEventWithNotificationInTransaction(
+          tx,
+          {
+            threadId: thread.id,
+            environmentId,
+            type: "client/turn/requested",
+            ...(retryOf !== undefined ? { retryOf } : {}),
+            input,
+            ...(inputGroups !== undefined ? { inputGroups } : {}),
+            execution,
+            initiator,
+            senderThreadId,
+            requestMethod: "turn/start",
+            source: "tell",
+            target,
+            requestId,
+          },
+        );
+      recordAcceptedPromptHistoryEntry(
+        { db: tx },
+        {
+          thread,
+          input,
+          initiator,
+          target,
+          requestSequence: appended.sequence,
         },
-        (request) => ({ delivery: "sent", turnRequestId: request.requestId }),
-      ),
+      );
+      const queueResult = queueInTransaction({
+        requestEventSequence: appended.sequence,
+        tx,
+      });
+      activeThread = queueResult.activeThread;
+      return appended;
+    },
     { behavior: "immediate" },
   );
   return {
@@ -599,7 +586,6 @@ async function sendThreadMessageWithoutContextClear(
 
   if (
     await dispatchTurnDuringReprovision({
-      submission: args.submission,
       beforeRequestAppendInTransaction: beforeAppendInTransaction,
       deps,
       environment,
@@ -676,7 +662,6 @@ async function sendThreadMessageWithoutContextClear(
         }
       : await prepareReadyThreadTurnCommand(deps, commandArgs);
     const queuedRequest = appendAndQueueSendThreadMessageInTransaction({
-      submission: args.submission,
       ...(args.retryOf !== undefined ? { retryOf: args.retryOf } : {}),
       beforeAppendInTransaction: ({ tx }) => {
         beforeAppendInTransaction({ tx });
@@ -773,7 +758,6 @@ async function sendThreadMessageWithoutContextClear(
     requestId,
   });
   const queuedRequest = appendAndQueueSendThreadMessageInTransaction({
-    submission: args.submission,
     ...(args.retryOf !== undefined ? { retryOf: args.retryOf } : {}),
     beforeAppendInTransaction,
     db: deps.db,

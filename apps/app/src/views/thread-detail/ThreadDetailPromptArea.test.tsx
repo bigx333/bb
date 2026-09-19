@@ -51,10 +51,6 @@ import {
 import { makePluginRegistrationSet } from "@/test/fixtures/plugins";
 
 const mocks = vi.hoisted(() => ({
-  createQueuedMessageIsPending: false,
-  durableEnabled: false,
-  serverConnected: true,
-  durableEnqueue: vi.fn(),
   cancelThreadPlanMutate: vi.fn(),
   clearThreadGoalMutate: vi.fn(),
   createQueuedMessageMutateAsync: vi.fn(),
@@ -107,21 +103,6 @@ vi.mock("react-router-dom", async (importOriginal) => {
   };
 });
 
-vi.mock("@/hooks/useDurableMessageSubmission", () => ({
-  useDurableMessageSubmission: () => ({
-    enabled: mocks.durableEnabled,
-    connected: mocks.serverConnected,
-    isSaving: false,
-    enqueue: mocks.durableEnqueue,
-  }),
-  isDurableMessageInput: () => true,
-}));
-
-vi.mock("@/hooks/useQueuedMessageRows", () => ({
-  useQueuedMessageRows: (_threadId: string, messages: readonly unknown[]) =>
-    messages,
-}));
-
 vi.mock("@/components/promptbox/FollowUpPromptBox", async () => {
   const { ComposerBannersSlot } = await vi.importActual<
     typeof import("@/components/plugin/PluginComposerBanners")
@@ -153,8 +134,6 @@ vi.mock("@/components/promptbox/FollowUpPromptBox", async () => {
       composer: {
         canModifierSubmit: boolean;
         message: string;
-        submitDisabled?: boolean;
-        isFollowUpSubmitting?: boolean;
         onChangeMessage: (message: string, mentions: []) => void;
         onEscape?: () => void;
         onModifierSubmit: () => void;
@@ -320,17 +299,12 @@ vi.mock("@/components/promptbox/FollowUpPromptBox", async () => {
           <>
             <input
               aria-label="Composer message"
-              readOnly={composer.isFollowUpSubmitting}
               value={composer.message}
               onChange={(event) =>
                 composer.onChangeMessage(event.currentTarget.value, [])
               }
             />
-            <button
-              type="button"
-              disabled={composer.submitDisabled}
-              onClick={composer.onSubmit}
-            >
+            <button type="button" onClick={composer.onSubmit}>
               Submit composer
             </button>
             {composer.canModifierSubmit ? (
@@ -693,7 +667,7 @@ vi.mock("@/hooks/mutations/thread-runtime-mutations", () => ({
     mutateAsync: mocks.createThreadMutateAsync,
   }),
   useCreateThreadQueuedMessage: () => ({
-    isPending: mocks.createQueuedMessageIsPending,
+    isPending: false,
     mutateAsync: mocks.createQueuedMessageMutateAsync,
   }),
   useDeleteThreadQueuedMessage: () => ({
@@ -927,10 +901,6 @@ function renderPromptArea(options: RenderPromptAreaOptions = {}) {
 }
 
 beforeEach(() => {
-  mocks.createQueuedMessageIsPending = false;
-  mocks.durableEnabled = false;
-  mocks.serverConnected = true;
-  mocks.durableEnqueue.mockReset().mockResolvedValue(undefined);
   testQueryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -992,192 +962,6 @@ describe("environment follow-up summary", () => {
 });
 
 describe("ThreadDetailPromptArea", () => {
-  it("disables idle Send while disconnected and keeps the draft editable", () => {
-    mocks.durableEnabled = true;
-    mocks.serverConnected = false;
-    mocks.promptDraft.text = "An offline draft";
-    renderPromptArea({
-      thread: makeThread({
-        status: "idle",
-        runtime: { displayStatus: "idle", hostReconnectGraceExpiresAt: null },
-      }),
-    });
-    const composer = screen.getByRole<HTMLInputElement>("textbox", {
-      name: "Composer message",
-    });
-    expect(
-      screen.getByRole<HTMLButtonElement>("button", { name: "Submit composer" })
-        .disabled,
-    ).toBe(true);
-    expect(composer.readOnly).toBe(false);
-    expect(screen.getByTestId("submit-title").textContent).toBe(
-      "Waiting for connection",
-    );
-    fireEvent.change(composer, { target: { value: "Still writing offline" } });
-    expect(mocks.promptDraft.setTextAndMentions).toHaveBeenCalledWith(
-      "Still writing offline",
-      [],
-    );
-    expect(mocks.durableEnqueue).not.toHaveBeenCalled();
-    expect(mocks.sendMessageMutateAsync).not.toHaveBeenCalled();
-  });
-
-  it("saves an offline busy-thread message through durable delivery without a second mutation or draft clear", async () => {
-    mocks.durableEnabled = true;
-    mocks.serverConnected = false;
-    mocks.promptDraft.text = "Save before reconnect";
-    const saved = createDeferredPromise<void>();
-    mocks.durableEnqueue.mockReturnValueOnce(saved.promise);
-    renderPromptArea({
-      thread: makeThread({
-        status: "active",
-        runtime: { displayStatus: "active", hostReconnectGraceExpiresAt: null },
-      }),
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Submit composer" }));
-    expect(mocks.durableEnqueue).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "queue",
-        request: expect.objectContaining({
-          input: [
-            { type: "text", text: "Save before reconnect", mentions: [] },
-          ],
-        }),
-      }),
-      {
-        storageKey: mocks.promptDraft.storageKey,
-        value: { text: "Save before reconnect", mentions: [], attachments: [] },
-      },
-    );
-    expect(mocks.promptDraft.clearIfCurrentMatches).not.toHaveBeenCalled();
-    await act(async () => {
-      saved.resolve();
-    });
-    expect(mocks.promptDraft.clearIfCurrentMatches).not.toHaveBeenCalled();
-    expect(mocks.createQueuedMessageMutateAsync).not.toHaveBeenCalled();
-    expect(mocks.sendMessageMutateAsync).not.toHaveBeenCalled();
-    const composer = screen.getByRole<HTMLInputElement>("textbox", {
-      name: "Composer message",
-    });
-    expect(composer.readOnly).toBe(false);
-    fireEvent.change(composer, { target: { value: "Another draft" } });
-    expect(mocks.promptDraft.setTextAndMentions).toHaveBeenCalledWith(
-      "Another draft",
-      [],
-    );
-  });
-
-  it("keeps the prompt intact if durable queue persistence fails", async () => {
-    mocks.durableEnabled = true;
-    mocks.serverConnected = false;
-    mocks.promptDraft.text = "Keep this unsaved submission";
-    mocks.durableEnqueue.mockRejectedValueOnce(
-      new Error("Message storage is full"),
-    );
-    renderPromptArea({
-      thread: makeThread({
-        status: "active",
-        runtime: { displayStatus: "active", hostReconnectGraceExpiresAt: null },
-      }),
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Submit composer" }));
-    });
-    expect(
-      screen.getByRole<HTMLInputElement>("textbox", {
-        name: "Composer message",
-      }).value,
-    ).toBe("Keep this unsaved submission");
-    expect(mocks.promptDraft.clearIfCurrentMatches).not.toHaveBeenCalled();
-    expect(mocks.createQueuedMessageMutateAsync).not.toHaveBeenCalled();
-    expect(mocks.sendMessageMutateAsync).not.toHaveBeenCalled();
-  });
-
-  it("does not resubmit a draft while another composer owns its pending request", () => {
-    mocks.createQueuedMessageIsPending = true;
-    mocks.promptDraft.text = "Already submitting";
-    renderPromptArea();
-    fireEvent.click(screen.getByRole("button", { name: "Submit composer" }));
-    expect(mocks.createQueuedMessageMutateAsync).not.toHaveBeenCalled();
-    expect(mocks.sendMessageMutateAsync).not.toHaveBeenCalled();
-    expect(mocks.promptDraft.clearIfCurrentMatches).not.toHaveBeenCalled();
-  });
-
-  it.each(["accepted", "failed"])(
-    "retains a queued draft until the request is %s",
-    async (outcome) => {
-      const submission = createDeferredPromise<ThreadQueuedMessage>();
-      mocks.createQueuedMessageMutateAsync.mockReturnValueOnce(
-        submission.promise,
-      );
-      mocks.promptDraft.text = "Keep this message safe";
-      const submittedDraft = mocks.promptDraft.getCurrent();
-      renderPromptArea({
-        thread: makeThread({
-          status: "active",
-          runtime: {
-            displayStatus: "active",
-            hostReconnectGraceExpiresAt: null,
-          },
-        }),
-      });
-
-      fireEvent.click(screen.getByRole("button", { name: "Submit composer" }));
-
-      expect(mocks.createQueuedMessageMutateAsync).toHaveBeenCalledTimes(1);
-      expect(mocks.promptDraft.clearIfCurrentMatches).not.toHaveBeenCalled();
-
-      await act(async () => {
-        if (outcome === "accepted") {
-          submission.resolve(makeQueuedMessage());
-        } else {
-          submission.reject(new TypeError("Failed to fetch"));
-        }
-      });
-
-      if (outcome === "accepted") {
-        expect(mocks.promptDraft.clearIfCurrentMatches).toHaveBeenCalledWith(
-          submittedDraft,
-        );
-      } else {
-        expect(mocks.promptDraft.clearIfCurrentMatches).not.toHaveBeenCalled();
-      }
-    },
-  );
-
-  it.each(["accepted", "failed"])(
-    "retains a direct-send draft until the request is %s",
-    async (outcome) => {
-      const submission = createDeferredPromise<{
-        ok: true;
-        delivery: "sent";
-      }>();
-      mocks.sendMessageMutateAsync.mockReturnValueOnce(submission.promise);
-      mocks.promptDraft.text = "Keep this direct message safe";
-      const submittedDraft = mocks.promptDraft.getCurrent();
-      renderPromptArea({
-        thread: makeThread({
-          status: "idle",
-          runtime: { displayStatus: "idle", hostReconnectGraceExpiresAt: null },
-        }),
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Submit composer" }));
-      expect(mocks.sendMessageMutateAsync).toHaveBeenCalledTimes(1);
-      expect(mocks.promptDraft.clearIfCurrentMatches).not.toHaveBeenCalled();
-      await act(async () => {
-        if (outcome === "accepted")
-          submission.resolve({ ok: true, delivery: "sent" });
-        else submission.reject(new TypeError("Failed to fetch"));
-      });
-      if (outcome === "accepted")
-        expect(mocks.promptDraft.clearIfCurrentMatches).toHaveBeenCalledWith(
-          submittedDraft,
-        );
-      else
-        expect(mocks.promptDraft.clearIfCurrentMatches).not.toHaveBeenCalled();
-    },
-  );
-
   it("preserves plugin submission data through a follow-up composer", async () => {
     mocks.defaultExecutionOptions = {
       model: "gpt-5",
@@ -1366,6 +1150,37 @@ describe("ThreadDetailPromptArea", () => {
     );
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it.each(["accepted", "failed"])(
+    "retains the queued draft until the request is %s",
+    async (outcome) => {
+      mocks.promptDraft.text = "Keep this queued prompt";
+      const pending = createDeferredPromise<ThreadQueuedMessage>();
+      mocks.createQueuedMessageMutateAsync.mockReturnValueOnce(pending.promise);
+      renderPromptArea({
+        thread: makeThread({
+          status: "active",
+          runtime: {
+            displayStatus: "active",
+            hostReconnectGraceExpiresAt: null,
+          },
+        }),
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Submit composer" }));
+      await waitFor(() =>
+        expect(mocks.createQueuedMessageMutateAsync).toHaveBeenCalledTimes(1),
+      );
+      expect(mocks.promptDraft.clearIfCurrentMatches).not.toHaveBeenCalled();
+      await act(async () => {
+        if (outcome === "accepted") pending.resolve(makeQueuedMessage());
+        else pending.reject(new Error("Connection lost"));
+      });
+      expect(mocks.promptDraft.clearIfCurrentMatches).toHaveBeenCalledTimes(
+        outcome === "accepted" ? 1 : 0,
+      );
+      expect(mocks.promptDraft.restoreIfEmpty).not.toHaveBeenCalled();
+    },
+  );
 
   it("keeps the queued drawer adjacent to the bottom composer", () => {
     mocks.queuedMessages = [makeQueuedMessage()];

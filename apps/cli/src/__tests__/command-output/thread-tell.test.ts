@@ -37,49 +37,6 @@ describe("bb thread tell command output", () => {
     });
   });
 
-  it("forwards submission IDs and uses follow-up mode for ordinary durable messages", async () => {
-    const post = vi.fn(async () => ({ ok: true, delivery: "sent" }));
-    const create = vi.fn(async () => ({ id: "qmsg_submission" }));
-    stubServerApi({
-      "v1.threads.:id.send.$post": post,
-      "v1.threads.:id.queued-messages.$post": create,
-    });
-    await runCommand(
-      [
-        "thread",
-        "tell",
-        "thread-submission",
-        "hello",
-        "--submission-id",
-        "send_nanoid",
-      ],
-      register,
-    );
-    await runCommand(
-      [
-        "thread",
-        "queue",
-        "create",
-        "thread-submission",
-        "hello",
-        "--submission-id",
-        "queue_nanoid",
-      ],
-      register,
-    );
-    expect(post).toHaveBeenCalledWith({
-      param: { id: "thread-submission" },
-      json: expect.objectContaining({
-        clientSubmissionId: "send_nanoid",
-        mode: "queue-if-active",
-      }),
-    });
-    expect(create).toHaveBeenCalledWith({
-      param: { id: "thread-submission" },
-      json: expect.objectContaining({ clientSubmissionId: "queue_nanoid" }),
-    });
-  });
-
   it("bb thread tell --message-file sends shell-active text untouched", async () => {
     const dir = await mkdtemp(join(tmpdir(), "bb-tell-file-"));
     const path = join(dir, "message.md");

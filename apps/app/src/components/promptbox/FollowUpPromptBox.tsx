@@ -136,7 +136,6 @@ export interface FollowUpComposerProps {
   submitLabel?: string;
   submitIcon?: IconName;
   submitTitle?: string;
-  submitDisabled?: boolean;
   compactPromptPlaceholder: string;
   promptPlaceholder: string;
   canModifierSubmit: boolean;
@@ -607,9 +606,7 @@ function FollowUpPromptBoxWithComposer({
   const modifierSubmitHint = (action: "queue" | "steer"): string =>
     onModifierSubmit ? `, ${modifierSubmitShortcutLabel()} to ${action}` : "";
   const executionControlsDisabled =
-    (executionReadOnly ?? false) ||
-    hasPendingInteraction ||
-    composer.isFollowUpSubmitting;
+    (executionReadOnly ?? false) || hasPendingInteraction;
   const footerStart = useMemo(
     () => (
       <ExecutionControls {...execution} disabled={executionControlsDisabled} />
@@ -624,9 +621,7 @@ function FollowUpPromptBoxWithComposer({
       activePromptMode,
     });
   const permissionReadOnlyResolved =
-    (permissionReadOnly ?? false) ||
-    hasPendingInteraction ||
-    composer.isFollowUpSubmitting;
+    (permissionReadOnly ?? false) || hasPendingInteraction;
   const permissionPickerDisabled =
     permissionReadOnlyResolved || permissionPickerDisabledByPlanMode;
   const permissionControl = useMemo(
@@ -731,13 +726,12 @@ function FollowUpPromptBoxWithComposer({
           isSubmitting: composer.isFollowUpSubmitting,
           disabled:
             !canSubmit ||
-            composer.submitDisabled === true ||
             composer.isFollowUpSubmitting ||
             (steerOnPrimarySubmit && !composer.canModifierSubmit),
           onModifierSubmit,
           title: composer.isFollowUpSubmitting
             ? "Submitting..."
-            : composer.submitTitle !== undefined
+            : canSubmit && composer.submitTitle !== undefined
               ? composer.submitTitle
               : isStopping
                 ? "Queue for after the stop (Enter)"

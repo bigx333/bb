@@ -954,28 +954,10 @@ export const promptHistoryEntries = sqliteTable(
   ],
 );
 
-export const threadSubmissionReceipts = sqliteTable(
-  "thread_submission_receipts",
-  {
-    threadId: text("thread_id")
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    clientSubmissionId: text("client_submission_id").notNull(),
-    operation: text("operation").$type<"send" | "queue">().notNull(),
-    fingerprint: text("fingerprint").notNull(),
-    result: text("result"),
-    createdAt: integer("created_at").notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.threadId, table.clientSubmissionId] }),
-  ],
-);
-
 export const queuedThreadMessages = sqliteTable(
   "queued_thread_messages",
   {
     id: text("id").primaryKey(),
-    clientSubmissionId: text("client_submission_id"),
     // JSON `{ kind, subject }` when this row is one of core's own system
     // notices rather than somebody's message; NULL for every ordinary row.
     // Owned by the server, which is the only thing that writes or reads it.

@@ -69,11 +69,6 @@ import { ProviderCliInstallLogDialogHost } from "./components/provider-cli/provi
 import { ServerMoveOverlay } from "./components/machines/ServerMoveOverlay";
 import { RouteLoadingSkeleton } from "./components/ui/route-loading-skeleton";
 
-const MessageDeliverySync = lazy(() =>
-  import("@/lib/message-delivery/MessageDeliverySync").then((m) => ({
-    default: m.MessageDeliverySync,
-  })),
-);
 const SettingsView = lazy(() =>
   import("./views/SettingsView").then((m) => ({
     default: m.SettingsView,
@@ -438,9 +433,6 @@ export function App() {
               <HashNavigationScroll />
               <NativeShellReporter />
               <UiPreferencesSync />
-              <Suspense fallback={null}>
-                <MessageDeliverySync />
-              </Suspense>
               <Routes>
                 <Route
                   path={AUTH_CALLBACK_ROUTE_PATH}

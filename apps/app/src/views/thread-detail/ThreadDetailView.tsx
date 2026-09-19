@@ -877,7 +877,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
   } = useThreadTimelineController({
     threadId,
   });
-  const sendMessage = useSendThreadMessage(threadId);
+  const sendMessage = useSendThreadMessage();
   const editMessage = useEditThreadMessage();
   const createQueuedMessage = useCreateThreadQueuedMessage();
   const requestEnvironmentAction = useRequestEnvironmentAction();

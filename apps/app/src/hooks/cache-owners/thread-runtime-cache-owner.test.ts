@@ -112,60 +112,6 @@ function makeQueuedMessage(
 }
 
 describe("thread runtime cache owner", () => {
-  it.each(["send", "queue"] as const)(
-    "does not resurrect consumed rows when a durable %s receipt is replayed",
-    (kind) => {
-      const queryClient = createAppQueryClient({
-        defaultOptions: { queries: { gcTime: Infinity, retry: false } },
-        showMutationErrorToasts: false,
-      });
-      queryClient.setQueryData(threadQueuedMessagesQueryKey("thread-1"), []);
-      queryClient.setQueryData(threadPromptHistoryQueryKey("thread-1"), []);
-      const queuedMessage = makeQueuedMessage({
-        id: "consumed-row",
-        clientSubmissionId: "submission-1",
-        replayed: true,
-      });
-      if (kind === "queue") {
-        applyQueuedMessageCreateResult({
-          queryClient,
-          threadId: "thread-1",
-          queuedMessage,
-          transaction: undefined,
-        });
-      } else {
-        applySendThreadMessageSuccess({
-          queryClient,
-          realtimeConnected: false,
-          request: {
-            id: "thread-1",
-            input: queuedMessage.content,
-            mode: "queue-if-active",
-            clientSubmissionId: "submission-1",
-          },
-          result: {
-            ok: true,
-            delivery: "queued",
-            queuedMessage,
-            clientSubmissionId: "submission-1",
-            replayed: true,
-          },
-          transaction: undefined,
-        });
-      }
-      expect(
-        queryClient.getQueryData(threadQueuedMessagesQueryKey("thread-1")),
-      ).toEqual([]);
-      expect(
-        queryClient.getQueryData(threadPromptHistoryQueryKey("thread-1")),
-      ).toEqual([]);
-      expect(
-        queryClient.getQueryState(threadQueuedMessagesQueryKey("thread-1"))
-          ?.isInvalidated,
-      ).toBe(true);
-    },
-  );
-
   it.each([
     ["Plan", applyThreadPlanCancellationResult, "activePlanModeCount"],
     ["Goal", applyThreadGoalClearResult, "activeGoalCount"],

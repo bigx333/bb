@@ -207,10 +207,7 @@ export function registerSystemRoutes(
       ),
       customThemes: listCustomThemeNames(themeRoot),
       pluginThemes: pluginService.listThemes(),
-      featureFlags: {
-        ...deps.config.featureFlags,
-        durableMessageDelivery: true,
-      },
+      featureFlags: deps.config.featureFlags,
       hostDaemonPort: deps.config.hostDaemonPort,
       localHelperPorts,
       serverUrl,

@@ -858,12 +858,10 @@ function rewindEnvironmentRowFactsMigration(db: DbConnection): void {
 }
 
 function rewindMachineProvidersMigration(db: DbConnection): void {
-  db.$client.exec("DROP TABLE IF EXISTS thread_submission_receipts");
   const queuedDispatchOrigin = db.$client
     .prepare<[], TableInfoRow>("PRAGMA table_info(queued_thread_messages)")
     .all();
   for (const name of [
-    "client_submission_id",
     "origin",
     "origin_plugin_id",
     "requested_by_initiator",

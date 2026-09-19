@@ -884,28 +884,6 @@ export function prefetchThreadQueuedMessages({
   });
 }
 
-export async function refreshAcceptedSubmissionQueries({
-  queryClient,
-  threadId,
-  load,
-}: PrefetchThreadQueuedMessagesArgs): Promise<void> {
-  await queryClient.fetchQuery({
-    queryKey: threadQueuedMessagesQueryKey(threadId),
-    queryFn: ({ signal }) => load(signal),
-    staleTime: 0,
-  });
-  await Promise.all([
-    queryClient.refetchQueries(
-      { queryKey: threadTimelineQueryKeyPrefix(threadId), type: "active" },
-      { throwOnError: true, cancelRefetch: false },
-    ),
-    queryClient.refetchQueries(
-      { queryKey: threadPromptHistoryQueryKey(threadId), type: "active" },
-      { throwOnError: true, cancelRefetch: false },
-    ),
-  ]);
-}
-
 export function applyCreateThreadResult({
   queryClient,
   request,
@@ -1030,14 +1008,6 @@ export function applySendThreadMessageSuccess({
   result,
   transaction,
 }: ApplySendThreadMessageSuccessArgs): void {
-  if (result.clientSubmissionId !== undefined) {
-    invalidateThreadAcceptedMessageQueriesWithoutRealtime({
-      queryClient,
-      threadId: request.id,
-    });
-    invalidateThreadQueueQueries({ queryClient, threadId: request.id });
-    return;
-  }
   const optimisticCreatedAt = transaction?.optimisticCreatedAt ?? Date.now();
   if (result.delivery === "queued") {
     const optimisticTimelineRowRemoved =
@@ -1159,10 +1129,6 @@ export function applyQueuedMessageCreateResult({
   threadId,
   transaction,
 }: QueuedMessageSuccessArgs): void {
-  if (queuedMessage.clientSubmissionId !== undefined) {
-    invalidateThreadQueueQueries({ queryClient, threadId });
-    return;
-  }
   queryClient.setQueryData<ThreadQueuedMessageListResponse>(
     threadQueuedMessagesQueryKey(threadId),
     (currentQueuedMessages) => {

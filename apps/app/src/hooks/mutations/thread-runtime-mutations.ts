@@ -166,27 +166,10 @@ export function useCreateThread() {
   });
 }
 
-const sendThreadMessageMutationKey = ["send-thread-message"];
-
-export function useSendThreadMessage(threadId?: string) {
+export function useSendThreadMessage() {
   const queryClient = useQueryClient();
 
-  const pendingCount = useIsMutating({
-    mutationKey: sendThreadMessageMutationKey,
-    predicate: ({ state }) => {
-      const variables = state.variables;
-      return (
-        threadId !== undefined &&
-        typeof variables === "object" &&
-        variables !== null &&
-        "id" in variables &&
-        variables.id === threadId
-      );
-    },
-  });
-
-  const mutation = useMutation({
-    mutationKey: sendThreadMessageMutationKey,
+  return useMutation({
     meta: {
       errorMessage: "Failed to send message.",
       lifecycleOperation: "send_message",
@@ -242,8 +225,6 @@ export function useSendThreadMessage(threadId?: string) {
       });
     },
   });
-
-  return { ...mutation, isPending: mutation.isPending || pendingCount > 0 };
 }
 
 export function useEditThreadMessage() {
@@ -268,26 +249,13 @@ export function useEditThreadMessage() {
   });
 }
 
-const createThreadQueuedMessageMutationKey = ["create-thread-queued-message"];
-
 export function useCreateThreadQueuedMessage(threadId?: string) {
   const queryClient = useQueryClient();
-  const pendingCount = useIsMutating({
-    mutationKey: createThreadQueuedMessageMutationKey,
-    predicate: ({ state }) => {
-      const variables = state.variables;
-      return (
-        threadId !== undefined &&
-        typeof variables === "object" &&
-        variables !== null &&
-        "id" in variables &&
-        variables.id === threadId
-      );
-    },
-  });
+  const mutationKey = ["create-thread-queued-message", threadId];
+  const isPending = useIsMutating({ mutationKey, exact: true }) > 0;
 
   const mutation = useMutation({
-    mutationKey: createThreadQueuedMessageMutationKey,
+    mutationKey,
     meta: {
       errorMessage: "Failed to queue message.",
       lifecycleOperation: "queue_message",
@@ -336,7 +304,19 @@ export function useCreateThreadQueuedMessage(threadId?: string) {
     },
   });
 
-  return { ...mutation, isPending: mutation.isPending || pendingCount > 0 };
+  return {
+    ...mutation,
+    isPending: threadId === undefined ? mutation.isPending : isPending,
+    mutateAsync: (...args: Parameters<typeof mutation.mutateAsync>) => {
+      if (
+        threadId !== undefined &&
+        queryClient.isMutating({ mutationKey, exact: true })
+      ) {
+        return Promise.reject(new Error("A message is still being queued."));
+      }
+      return mutation.mutateAsync(...args);
+    },
+  };
 }
 
 export function useUpdateThreadQueuedMessage() {

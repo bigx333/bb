@@ -115,7 +115,6 @@
     "babel-plugin-react-compiler": "^1.0.0",
     "bb-plugin-automations": "workspace:*",
     "cacache": "^20.0.4",
-    "fake-indexeddb": "^6.2.5",
     "lightningcss": "^1.32.0",
     "mdast-util-to-hast": "^13.2.1",
     "oniguruma-to-es": "^4.3.4",

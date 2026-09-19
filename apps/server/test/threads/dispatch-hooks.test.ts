@@ -319,47 +319,6 @@ describe("message.dispatch hook context", () => {
 });
 
 describe("pending admission races", () => {
-  it("records first admission before replaying a saved submission", async () => {
-    await withTestHarness(async (harness) => {
-      const registry = emptyRegistry();
-      registry["message.dispatch"].push({
-        pluginId: "limiter",
-        handler: () => ({ action: "wait", reason: "at capacity" }) as const,
-      });
-      installHooks(registry);
-      const { host, project } = seedDispatchFixture(
-        harness,
-        "host-submission-admission",
-      );
-      const created = await createHookedThread(harness, {
-        hostId: host.id,
-        projectId: project.id,
-      });
-      setPluginHookProvider(undefined);
-      const thread = getThread(harness.db, created.id);
-      if (!thread) throw new Error("Expected pending thread");
-      const payload = {
-        clientSubmissionId: "pending_nanoid",
-        input: textInput("admit once"),
-        mode: "start" as const,
-      };
-      const first = await acceptThreadSendRequest(harness.deps, {
-        thread,
-        payload,
-      });
-      expect(first).toMatchObject({
-        delivery: "sent",
-        clientSubmissionId: payload.clientSubmissionId,
-        turnRequestId: expect.any(String),
-      });
-      const requests = turnRequests(harness, thread.id);
-      await expect(
-        acceptThreadSendRequest(harness.deps, { thread, payload }),
-      ).resolves.toEqual({ ...first, replayed: true });
-      expect(turnRequests(harness, thread.id)).toEqual(requests);
-    });
-  });
-
   it("re-decides a first message that lost the admission instead of calling it sent", async () => {
     await withTestHarness(async (harness) => {
       // Park the thread in `pending` with its first message queued, then take
