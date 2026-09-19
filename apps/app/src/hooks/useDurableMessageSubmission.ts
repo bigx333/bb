@@ -1,9 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import {
-  isStandaloneBuiltinClearCommand,
-  isStandaloneBuiltinCompactCommand,
-  type PromptInput,
-} from "@bb/domain";
+import type { PromptInput } from "@bb/domain";
 import type { PromptDraftState } from "@bb/client-core";
 import type {
   CreateQueuedMessageRequest,
@@ -22,18 +18,14 @@ type DurableRequest =
   | { kind: "queue"; request: CreateQueuedMessageRequest };
 
 export function isDurableMessageInput(input: readonly PromptInput[]): boolean {
-  return (
-    !isStandaloneBuiltinClearCommand(input) &&
-    !isStandaloneBuiltinCompactCommand(input) &&
-    !input.some(
-      (block) =>
-        block.type === "text" &&
-        block.mentions.some(
-          (mention) =>
-            mention.resource.kind === "command" &&
-            mention.resource.source === "command",
-        ),
-    )
+  return !input.some(
+    (block) =>
+      block.type === "text" &&
+      block.mentions.some(
+        (mention) =>
+          mention.resource.kind === "command" &&
+          mention.resource.source === "command",
+      ),
   );
 }
 

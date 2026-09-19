@@ -22,7 +22,7 @@ import {
 } from "@/lib/queued-message-rows";
 import { deleteSubmission, editSubmission } from "@/lib/message-delivery/store";
 
-type QueuedMessageSendGuard = "current-head" | "exists" | "none";
+type QueuedMessageSendGuard = "current-head" | "exists";
 
 interface SendQueuedMessageByIdArgs {
   guard: QueuedMessageSendGuard;

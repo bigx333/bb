@@ -109,12 +109,12 @@ afterEach(() => {
 });
 
 describe("local queued-message action boundaries", () => {
-  it("never sends an unaccepted ID even with guard none, and blocks uncertain edits, deletes, and mixed reorders", async () => {
+  it("blocks unaccepted sends, uncertain edits and deletes, and mixed reorders", async () => {
     const row = localRow(false);
     const { result } = renderActions(row);
     await act(async () => {
       await result.current.sendQueuedMessageById({
-        guard: "none",
+        guard: "exists",
         messageId: row.id,
         mode: "auto",
       });

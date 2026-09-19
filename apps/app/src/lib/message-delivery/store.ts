@@ -19,9 +19,7 @@ const acceptedSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("send"), result: sendMessageResponseSchema }),
   z.object({
     kind: z.literal("queue"),
-    result: threadQueuedMessageSchema.extend({
-      replayed: z.boolean().optional(),
-    }),
+    result: threadQueuedMessageSchema,
   }),
 ]);
 const draftSchema = z.object({
@@ -550,7 +548,7 @@ export async function settleSubmission(
     if (settlement.kind === "accepted")
       next = submissionSchema.parse({
         ...current,
-        accepted: acceptedSchema.parse(settlement.accepted),
+        accepted: settlement.accepted,
         status: "accepted",
         error: null,
         nextAttemptAt: 0,
