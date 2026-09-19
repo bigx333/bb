@@ -840,6 +840,7 @@ describe("SkillsOverview", () => {
 describe("SkillsLibrary library detail routing", () => {
   it("keeps cached file content through a failed refresh and updates on success", async () => {
     const skill = makeSkill();
+    vi.spyOn(sdk.hosts, "list").mockResolvedValue([]);
     vi.spyOn(sdk.skills, "list").mockResolvedValue({ skills: [skill] });
     vi.spyOn(sdk.skills, "listFiles").mockResolvedValue({
       files: ["SKILL.md"],
