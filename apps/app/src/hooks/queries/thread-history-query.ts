@@ -12,7 +12,7 @@ import type {
 import {
   areTimelinePaginationCursorsEqual,
   resolveLoadedTimelineSurfaceKey,
-} from "@bb/client-core";
+} from "@bb/client-core/timeline";
 import { BbHttpError, sdk } from "@/lib/sdk";
 import {
   compactThreadHistory,

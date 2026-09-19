@@ -15,7 +15,7 @@ import {
   prependOlderTimelineRows,
   resolveLoadedTimelineSurfaceKey,
   type LoadedTimelineState,
-} from "@bb/client-core";
+} from "@bb/client-core/timeline";
 import { useConnectionAwareQueryState } from "@/hooks/queries/connection-aware-query-state";
 import { threadTimelineQueryKey } from "@/hooks/queries/query-keys";
 import { isTransientReadError } from "@/hooks/queries/query-helpers";

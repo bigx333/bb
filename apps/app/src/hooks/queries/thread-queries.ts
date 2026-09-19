@@ -1011,7 +1011,9 @@ export function useThreadTimelineTurnSummaryDetails(
       const response = await sdk.threads.timelineTurnSummaryDetails(input);
       let cursor = response.olderCursor;
       if (!cursor) return { ...response, olderCursor: null };
-      const { prependOlderTimelineRows } = await import("@bb/client-core");
+      const { prependOlderTimelineRows } = await import(
+        "@bb/client-core/timeline"
+      );
       let rows = response.rows;
       while (cursor) {
         const older = await sdk.threads.timelineTurnSummaryDetails({
