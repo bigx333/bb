@@ -123,47 +123,12 @@ export function useThreadTimelineController({
   const store = useStore();
   const accessDenied = isAccessError(latestTimelineQuery.error);
   const blocked = accessDenied || history.isBlocked;
-  const makeInitialLoaded = () => {
-    if (blocked)
-      return {
-        loaded: buildEmptyLoadedTimelineState(surfaceKey),
-        unrefreshed: false,
-      };
-    const retained =
-      history.data &&
-      buildLoadedTimelineFromPages({
-        pages: history.data.pages.map((page) => page.response),
-        surfaceKey,
-      });
-    const loaded = retained ?? buildEmptyLoadedTimelineState(surfaceKey);
-    if (!latestTimeline) return { loaded, unrefreshed: false };
-    const merged = tryMergeLoadedTimelineWithLatest({
-      current: loaded,
-      latestTimeline,
-      surfaceKey,
-    });
-    if (merged) return { loaded: merged, unrefreshed: false };
-    if (
-      loaded.rows.length > 0 &&
-      store.get(threadTimelineScrollAnchorAtomFamily(threadId))?.atBottom ===
-        false
-    ) {
-      return { loaded, unrefreshed: true };
-    }
-    return {
-      loaded: mergeLoadedTimelineWithLatest({
-        current: loaded,
-        latestTimeline,
-        surfaceKey,
-      }),
-      unrefreshed: false,
-    };
-  };
   const [tracker, setTracker] = useState<LoadedTimelineTracker>(() => ({
-    latestTimeline,
-    history: history.data,
+    latestTimeline: undefined,
+    history: undefined,
     generation: history.generation,
-    ...makeInitialLoaded(),
+    loaded: buildEmptyLoadedTimelineState(surfaceKey),
+    unrefreshed: false,
     replacementKey: null,
   }));
   let current = tracker;
@@ -174,8 +139,13 @@ export function useThreadTimelineController({
     tracker.loaded.surfaceKey !== surfaceKey ||
     (blocked && tracker.loaded.rows.length > 0)
   ) {
-    let loaded = tracker.loaded;
-    let unrefreshed = tracker.unrefreshed;
+    const reset =
+      tracker.loaded.surfaceKey !== surfaceKey ||
+      tracker.generation !== history.generation;
+    let loaded = reset
+      ? buildEmptyLoadedTimelineState(surfaceKey)
+      : tracker.loaded;
+    let unrefreshed = !reset && tracker.unrefreshed;
     let replacementKey = tracker.replacementKey;
     const detached =
       store.get(threadTimelineScrollAnchorAtomFamily(threadId))?.atBottom ===
@@ -183,18 +153,10 @@ export function useThreadTimelineController({
     if (blocked) {
       loaded = buildEmptyLoadedTimelineState(surfaceKey);
       unrefreshed = false;
-    } else if (
-      loaded.surfaceKey !== surfaceKey ||
-      tracker.generation !== history.generation
-    ) {
-      const initial = makeInitialLoaded();
-      loaded = initial.loaded;
-      unrefreshed = initial.unrefreshed;
-      replacementKey = history.data?.pages[0] ?? latestTimeline ?? null;
     } else {
-      if (history.data && tracker.history !== history.data) {
+      if (history.data && (reset || tracker.history !== history.data)) {
         const head = history.data.pages[0];
-        const replaced = head !== tracker.history?.pages[0];
+        const replaced = reset || head !== tracker.history?.pages[0];
         const refreshed = replaced
           ? reconcileLoadedTimelineWithHistoryPages({
               current: loaded,
@@ -240,7 +202,8 @@ export function useThreadTimelineController({
       }
       if (
         latestTimeline &&
-        (tracker.latestTimeline !== latestTimeline ||
+        (reset ||
+          tracker.latestTimeline !== latestTimeline ||
           tracker.history !== history.data)
       ) {
         const merged = tryMergeLoadedTimelineWithLatest({
@@ -282,7 +245,10 @@ export function useThreadTimelineController({
       generation: history.generation,
       loaded,
       unrefreshed,
-      replacementKey,
+      replacementKey:
+        tracker.latestTimeline === undefined && tracker.history === undefined
+          ? null
+          : replacementKey,
     };
     setTracker(current);
   }

@@ -37,10 +37,7 @@ interface ForegroundRead {
   promise: Promise<ThreadTimelineResponse | undefined>;
   resolve: (response: ThreadTimelineResponse | undefined) => void;
   reject: (error: unknown) => void;
-  outcome:
-    | { status: "success"; response: ThreadTimelineResponse | undefined }
-    | { status: "error"; error: unknown }
-    | undefined;
+  response: ThreadTimelineResponse | undefined;
 }
 
 interface HistoryReadState {
@@ -121,23 +118,23 @@ export function useThreadHistory({
             state.foreground = undefined;
             foreground.resolve(undefined);
           } else if (
-            foreground?.outcome?.status === "success" &&
+            foreground &&
             event.type === "updated" &&
             event.action.type === "success" &&
             !event.action.manual
           ) {
             state.foreground = undefined;
-            foreground.resolve(foreground.outcome.response);
+            foreground.resolve(foreground.response);
           } else if (
             foreground &&
             event.type === "updated" &&
             event.action.type === "error"
           ) {
             if (event.action.error instanceof CancelledError) {
-              foreground.outcome = undefined;
-            } else if (foreground.outcome?.status === "error") {
+              foreground.response = undefined;
+            } else {
               state.foreground = undefined;
-              foreground.reject(foreground.outcome.error);
+              foreground.reject(event.action.error);
             }
           }
         }
@@ -208,16 +205,20 @@ export function useThreadHistory({
         state.foreground.resolve(undefined);
         state.foreground = undefined;
       }
-      const finishForeground = (
-        response: ThreadTimelineResponse | undefined,
-      ) => {
-        if (!foreground) return;
-        foreground.outcome = { status: "success", response };
-      };
       const assertCurrent = () => {
         if (signal.aborted || owner.request !== requestGeneration) {
           throw new CancelledError({ revert: true });
         }
+      };
+      const fetchOlder = async (cursor: TimelinePaginationCursor) => {
+        const response = await sdk.threads.timeline({
+          threadId,
+          beforeAnchorId: cursor.anchorId,
+          beforeAnchorSeq: String(cursor.anchorSeq),
+          signal,
+        });
+        assertCurrent();
+        return response;
       };
       const rebuild = async (): Promise<ThreadHistoryChain> => {
         assertCurrent();
@@ -266,13 +267,7 @@ export function useThreadHistory({
             firstSequence < targetSequence
           )
             break;
-          const response = await sdk.threads.timeline({
-            threadId,
-            beforeAnchorId: cursor.anchorId,
-            beforeAnchorSeq: String(cursor.anchorSeq),
-            signal,
-          });
-          assertCurrent();
+          const response = await fetchOlder(cursor);
           const page = createThreadHistoryPage(response, cursor);
           if (bytes + page.byteSize > THREAD_HISTORY_MAX_BYTES) break;
           pages.push(page);
@@ -287,14 +282,8 @@ export function useThreadHistory({
       };
       try {
         if (foreground) {
-          const response = await sdk.threads.timeline({
-            threadId,
-            beforeAnchorId: foreground.cursor.anchorId,
-            beforeAnchorSeq: String(foreground.cursor.anchorSeq),
-            signal,
-          });
-          assertCurrent();
-          finishForeground(response);
+          const response = await fetchOlder(foreground.cursor);
+          foreground.response = response;
           const previous = current?.pages.at(-1);
           if (
             current &&
@@ -334,14 +323,12 @@ export function useThreadHistory({
         try {
           if (!isStaleCursor(error)) throw error;
           const rebuilt = await rebuild();
-          finishForeground(undefined);
           return foreground
             ? { ...rebuilt, recoveredFromCursor: foreground.cursor }
             : rebuilt;
         } catch (readError) {
           if (isAccessFailure(readError)) {
             removeThreadHistory({ queryClient, threadId, error: readError });
-            finishForeground(undefined);
             throw readError;
           }
           if (
@@ -349,12 +336,7 @@ export function useThreadHistory({
             owner.request !== requestGeneration ||
             readError instanceof CancelledError
           ) {
-            if (owner.request !== requestGeneration)
-              finishForeground(undefined);
             throw new CancelledError({ revert: true });
-          }
-          if (foreground) {
-            foreground.outcome = { status: "error", error: readError };
           }
           throw readError;
         }
@@ -404,7 +386,7 @@ export function useThreadHistory({
         promise,
         resolve,
         reject,
-        outcome: undefined,
+        response: undefined,
       };
       state.refreshAfterForeground ||=
         queryClient.getQueryState(queryKey)?.fetchStatus === "fetching";
@@ -416,14 +398,7 @@ export function useThreadHistory({
           foreground.resolve(undefined);
           return;
         }
-        try {
-          await refetch({ cancelRefetch: false });
-        } finally {
-          if (owner.request !== foreground.generation) {
-            if (state.foreground === foreground) state.foreground = undefined;
-            foreground.resolve(undefined);
-          }
-        }
+        await refetch({ cancelRefetch: false });
       })();
       return promise;
     },
