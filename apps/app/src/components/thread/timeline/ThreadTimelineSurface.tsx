@@ -171,6 +171,7 @@ export function ThreadTimelineSurface({
   includePluginMessageActions,
   onLoadOlderRows,
   onRefreshHistory,
+  onShowLatestTimeline,
   onOpenLink,
   onOpenLocalFileLink,
   onOpenPluginPanel,
@@ -224,7 +225,7 @@ export function ThreadTimelineSurface({
         (historyRefreshError !== null || historyUnrefreshed) ? (
           <div
             role="status"
-            className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
+            className="flex flex-wrap items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
           >
             <span>
               {historyRefreshError !== null
@@ -241,6 +242,17 @@ export function ThreadTimelineSurface({
                 onClick={() => void onRefreshHistory().catch(() => {})}
               >
                 {isRefreshingHistory ? "Refreshing…" : "Retry"}
+              </Button>
+            ) : null}
+            {historyUnrefreshed && onShowLatestTimeline ? (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto px-1 text-xs"
+                onClick={onShowLatestTimeline}
+              >
+                Show latest
               </Button>
             ) : null}
           </div>

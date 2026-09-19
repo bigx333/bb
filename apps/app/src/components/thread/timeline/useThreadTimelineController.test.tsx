@@ -39,6 +39,7 @@ import {
 import {
   createThreadHistoryPage,
   removeThreadHistory,
+  type ThreadHistoryChain,
 } from "@/hooks/cache-owners/thread-history-cache-owner";
 import { threadTimelineScrollAnchorAtomFamily } from "@/lib/thread-timeline-scroll-anchor";
 import { createQueryClientTestHarness } from "@/test/queryClientTestHarness";
@@ -817,6 +818,83 @@ describe("useThreadTimelineController", () => {
       beforeAnchorId: newestLoadedRow.id,
       beforeAnchorSeq: "1",
     });
+  });
+
+  it("advances beyond deep history after a cursor-invalidating rename with five pages retained", async () => {
+    let revision = 1;
+    const page = (sequence: number, kind: "latest" | "older") =>
+      makeTimelineResponse({
+        rows: [makeUserRow(`row-${sequence}`, sequence)],
+        maxSeq: 9,
+        timelinePage: {
+          kind,
+          historySnapshot: `snapshot-${revision}`,
+          olderRowsSourceSeqEnd: sequence - 1,
+          hasOlderRows: sequence > 0,
+          olderCursor:
+            sequence > 0
+              ? { anchorId: `${revision}:${sequence}`, anchorSeq: sequence }
+              : null,
+        },
+      });
+    vi.mocked(sdk.threads.timeline).mockImplementation(async (request) => {
+      if (!request.beforeAnchorId) return page(9, "latest");
+      if (!request.beforeAnchorId.startsWith(`${revision}:`)) {
+        throw new BbHttpError({
+          body: null,
+          code: "invalid_request",
+          message: "Timeline pagination cursor is no longer available",
+          status: 400,
+        });
+      }
+      return page(Number(request.beforeAnchorSeq) - 1, "older");
+    });
+    const { queryClient, wrapper } = createQueryClientTestHarness();
+    const latest = page(9, "latest");
+    queryClient.setQueryData(TIMELINE_QUERY_KEY, latest);
+    const key = threadHistoryQueryKey(
+      "thread-1",
+      resolveLoadedTimelineSurfaceKey("thread-1", latest),
+      latest.timelinePage.segmentLimit,
+    );
+    const { result } = renderHook(
+      () => useThreadTimelineController({ threadId: "thread-1" }),
+      { wrapper },
+    );
+    for (let index = 0; index < 6; index += 1) {
+      await act(async () => result.current.loadOlderTimelineRows());
+    }
+    const loadedIds = rowIds(result.current);
+    expect(loadedIds).toEqual([
+      "row-3",
+      "row-4",
+      "row-5",
+      "row-6",
+      "row-7",
+      "row-8",
+      "row-9",
+    ]);
+    expect(queryClient.getQueryData<ThreadHistoryChain>(key)?.pages).toHaveLength(5);
+
+    revision = 2;
+    await act(async () => result.current.loadOlderTimelineRows());
+    expect(rowIds(result.current)).toEqual(loadedIds);
+    expect(sdk.threads.timeline).toHaveBeenCalledTimes(12);
+    for (let index = 0; index < 3; index += 1) {
+      await act(async () => result.current.loadOlderTimelineRows());
+    }
+
+    expect(rowIds(result.current)).toEqual(["row-2", ...loadedIds]);
+    const requests = vi.mocked(sdk.threads.timeline).mock.calls;
+    expect(requests.slice(12).map(([request]) => request.beforeAnchorId)).toEqual([
+      "2:5",
+      "2:4",
+      "2:3",
+    ]);
+    expect(
+      requests.filter(([request]) => request.beforeAnchorId === "1:3"),
+    ).toHaveLength(1);
+    expect(queryClient.getQueryData<ThreadHistoryChain>(key)?.pages).toHaveLength(5);
   });
 
   it("keeps auto-loading when an older page settles before its loading state renders", async () => {

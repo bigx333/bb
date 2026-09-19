@@ -34,6 +34,33 @@ afterEach(() => {
 });
 
 describe("ThreadTimelineSurface load-older control", () => {
+  it("offers Show latest for held history without a composer or bottom-anchor context", () => {
+    const showLatest = vi.fn();
+    const surface = (historyUnrefreshed: boolean) => (
+      <ThreadTimelineSurface
+        activeThinking={null}
+        contextBoundarySeq={null}
+        historyUnrefreshed={historyUnrefreshed}
+        isThreadTimelinePending={false}
+        onShowLatestTimeline={showLatest}
+        showOngoingIndicator={false}
+        threadId="thread-1"
+        threadRuntimeDisplayStatus="idle"
+        timelineError={false}
+        timelineRows={[
+          conversationRow({ id: "cached", text: "Previously loaded reply" }),
+        ]}
+        workspaceRootPath={undefined}
+      />
+    );
+    const view = render(surface(true));
+    expect(screen.getByText("Previously loaded reply")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show latest" }));
+    expect(showLatest).toHaveBeenCalledTimes(1);
+    view.rerender(surface(false));
+    expect(screen.queryByRole("button", { name: "Show latest" })).toBeNull();
+  });
+
   it("keeps cached messages readable when refresh fails and offers a bounded retry", () => {
     const refresh = vi.fn().mockResolvedValue(undefined);
     const surface = (isRefreshingHistory: boolean) => (

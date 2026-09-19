@@ -262,6 +262,19 @@ export function useThreadTimelineController({
           unrefreshed = true;
         }
       }
+      if (
+        history.data?.recoveredFromCursor &&
+        areTimelinePaginationCursorsEqual({
+          left: loaded.olderCursor,
+          right: history.data.recoveredFromCursor,
+        })
+      ) {
+        loaded = {
+          ...loaded,
+          olderCursor:
+            history.data.pages.at(-1)?.response.timelinePage.olderCursor ?? null,
+        };
+      }
     }
     current = {
       latestTimeline,

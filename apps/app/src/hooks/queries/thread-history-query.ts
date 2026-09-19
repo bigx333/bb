@@ -335,7 +335,9 @@ export function useThreadHistory({
           if (!isStaleCursor(error)) throw error;
           const rebuilt = await rebuild();
           finishForeground(undefined);
-          return rebuilt;
+          return foreground
+            ? { ...rebuilt, recoveredFromCursor: foreground.cursor }
+            : rebuilt;
         } catch (readError) {
           if (isAccessFailure(readError)) {
             removeThreadHistory({ queryClient, threadId, error: readError });

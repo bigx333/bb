@@ -28,6 +28,7 @@ export interface ThreadHistoryPage {
 export interface ThreadHistoryChain {
   pages: ThreadHistoryPage[];
   surfaceKey: string;
+  recoveredFromCursor?: TimelinePaginationCursor;
 }
 
 interface ThreadHistoryGeneration {

@@ -1,4 +1,3 @@
-import { prependOlderTimelineRows } from "@bb/client-core";
 import {
   useInfiniteQuery,
   useQuery,
@@ -1010,8 +1009,10 @@ export function useThreadTimelineTurnSummaryDetails(
         signal,
       };
       const response = await sdk.threads.timelineTurnSummaryDetails(input);
-      let rows = response.rows;
       let cursor = response.olderCursor;
+      if (!cursor) return { ...response, olderCursor: null };
+      const { prependOlderTimelineRows } = await import("@bb/client-core");
+      let rows = response.rows;
       while (cursor) {
         const older = await sdk.threads.timelineTurnSummaryDetails({
           ...input,
