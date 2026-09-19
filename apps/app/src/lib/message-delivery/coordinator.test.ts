@@ -19,7 +19,6 @@ beforeEach(async () => {
   vi.stubGlobal("IDBKeyRange", IDBKeyRange);
   store = await import("./store");
   coordinator = await import("./coordinator");
-  vi.spyOn(Math, "random").mockReturnValue(0.5);
 });
 
 afterEach(async () => {

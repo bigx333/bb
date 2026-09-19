@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { calculateExponentialBackoffDelay } from "@bb/domain";
 import {
   claimSubmission,
   completeSubmissionHandoff,
@@ -45,11 +46,6 @@ function failureError(error: unknown): Error {
   return error instanceof Error
     ? error
     : new Error("Message delivery could not be completed.");
-}
-
-function retryDelay(entry: Submission): number {
-  const backoff = Math.min(60_000, 1_000 * 2 ** Math.min(entry.retryCount, 6));
-  return Math.round(backoff * (0.8 + Math.random() * 0.4));
 }
 
 export function startMessageDelivery(
@@ -162,7 +158,13 @@ export function startMessageDelivery(
         });
         options.onError?.(failureError(error));
       } else {
-        const nextAttemptAt = Date.now() + retryDelay(claim.entry);
+        const nextAttemptAt =
+          Date.now() +
+          calculateExponentialBackoffDelay({
+            attempt: claim.entry.retryCount + 1,
+            baseDelayMs: 1_000,
+            maxDelayMs: 60_000,
+          });
         await settleSubmission(claim, {
           kind: "retry",
           error: failure.message,
