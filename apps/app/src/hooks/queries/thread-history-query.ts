@@ -38,6 +38,7 @@ interface ForegroundRead {
   resolve: (response: ThreadTimelineResponse | undefined) => void;
   reject: (error: unknown) => void;
   response: ThreadTimelineResponse | undefined;
+  finished: boolean;
 }
 
 interface HistoryReadState {
@@ -118,7 +119,7 @@ export function useThreadHistory({
             state.foreground = undefined;
             foreground.resolve(undefined);
           } else if (
-            foreground &&
+            foreground?.finished &&
             event.type === "updated" &&
             event.action.type === "success" &&
             !event.action.manual
@@ -132,7 +133,8 @@ export function useThreadHistory({
           ) {
             if (event.action.error instanceof CancelledError) {
               foreground.response = undefined;
-            } else {
+              foreground.finished = false;
+            } else if (foreground.finished) {
               state.foreground = undefined;
               foreground.reject(event.action.error);
             }
@@ -341,6 +343,7 @@ export function useThreadHistory({
           throw readError;
         }
       } finally {
+        if (foreground && !signal.aborted) foreground.finished = true;
         pruneThreadHistory(queryClient);
       }
     },
@@ -387,6 +390,7 @@ export function useThreadHistory({
         resolve,
         reject,
         response: undefined,
+        finished: false,
       };
       state.refreshAfterForeground ||=
         queryClient.getQueryState(queryKey)?.fetchStatus === "fetching";

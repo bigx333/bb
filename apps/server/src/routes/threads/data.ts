@@ -330,7 +330,8 @@ export function registerThreadDataRoutes(app: Hono, deps: AppDeps): void {
   deps.hub.onChangedMessage((message) => {
     if (
       message.entity === "thread" &&
-      message.changes.includes("history-rewritten")
+      (message.changes.includes("history-rewritten") ||
+        message.changes.includes("title-changed"))
     ) {
       clearTimelineOrderingContextCache(deps.db);
       timelineCache.invalidateThread(message.id);
