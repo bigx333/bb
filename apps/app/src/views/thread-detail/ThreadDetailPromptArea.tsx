@@ -1365,6 +1365,25 @@ export function ThreadDetailPromptArea({
     }
 
     if (shortcutRequest.kind === "draft") {
+      try {
+        if (
+          pendingMessages.retain({
+            request: shortcutRequest.request,
+            operation: "steer",
+          })
+        ) {
+          promptDraft.clearIfCurrentMatches(submittedDraft);
+          setBottomAttachmentError(null);
+          return;
+        }
+      } catch (error) {
+        showMutationErrorToast({
+          error,
+          fallbackMessage: "Could not save message on this device",
+          lifecycleOperation: "send_message",
+        });
+        return;
+      }
       promptDraft.clearIfCurrentMatches(submittedDraft);
       setBottomAttachmentError(null);
       await runWhileFollowUpShortcutSending(
@@ -1405,6 +1424,7 @@ export function ThreadDetailPromptArea({
     currentPromptDraft,
     currentPromptDraftInput,
     followUpExecutionSelection,
+    pendingMessages,
     promptDraft,
     queuedMessagesRef,
     sendMessage,

@@ -22,7 +22,9 @@ export async function acceptThreadSendRequest(
   if (args.payload.clientSubmissionId !== undefined) {
     const { mode, pluginSubmission, sendAt, ...payload } = args.payload;
     if (
-      (mode !== "start" && mode !== "queue-if-active") ||
+      (mode !== "start" &&
+        mode !== "queue-if-active" &&
+        mode !== "steer-if-active") ||
       pluginSubmission !== undefined ||
       sendAt !== undefined ||
       payload.input.some(
@@ -48,6 +50,7 @@ export async function acceptThreadSendRequest(
         thread: args.thread,
         payload,
         startWhenIdle: true,
+        steerWhenActive: mode === "steer-if-active",
       }),
     };
   }

@@ -45,7 +45,10 @@ function PendingDelivery({ entry }: { entry: PendingThreadMessage }) {
               .send({
                 ...request,
                 threadId: id,
-                mode: "queue-if-active",
+                mode:
+                  entry.operation === "steer"
+                    ? "steer-if-active"
+                    : "queue-if-active",
                 signal,
               })
               .then((result) =>

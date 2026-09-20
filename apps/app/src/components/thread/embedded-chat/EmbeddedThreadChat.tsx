@@ -609,6 +609,29 @@ function EmbeddedThreadChatWithComposer({
       return;
     }
 
+    try {
+      if (
+        pendingMessages.retain({
+          request: {
+            id: threadId,
+            input: submittedInput,
+            ...executionRequestFields,
+          },
+          operation: "steer",
+        })
+      ) {
+        promptDraft.clearIfCurrentMatches(submittedDraft);
+        setBottomAttachmentError(null);
+        return;
+      }
+    } catch (error) {
+      showMutationErrorToast({
+        error,
+        fallbackMessage: "Could not save message on this device",
+        lifecycleOperation: "send_message",
+      });
+      return;
+    }
     promptDraft.clearIfCurrentMatches(submittedDraft);
     setBottomAttachmentError(null);
     setIsTurnSubmitting(true);
@@ -643,6 +666,7 @@ function EmbeddedThreadChatWithComposer({
     currentPromptDraft,
     currentPromptDraftInput,
     executionRequestFields,
+    pendingMessages,
     promptDraft,
     queuedMessages,
     sendQueuedMessageById,

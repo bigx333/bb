@@ -360,9 +360,10 @@ Queued messages:
   leave it blank. The SDK and `--json` include `initiator` and `senderThreadId`.
 
   Reuse --submission-id with the same message when retrying queue create or
-  thread tell --mode queue after a lost response. The server recognizes the
-  submission even after dispatch. Keys are scoped to a thread and do not
-  support steering, commands, or scheduled sends.
+  thread tell --mode queue or --mode steer after a lost response. The server
+  recognizes the submission even after dispatch. Keys are scoped to a thread and do not
+  support commands or scheduled sends. Steering joins the active turn when
+  possible; ordinary queued messages wait for that turn to finish.
 
   A queued message is one that could not dispatch yet. Every one carries a
   typed reason in its `Waiting on` column: waiting for the current turn to

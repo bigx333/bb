@@ -11,7 +11,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 const prefix = "bb.pending-thread-message.v1.";
 const entrySchema = z.object({
-  operation: z.enum(["send", "queue"]),
+  operation: z.enum(["send", "queue", "steer"]),
   request: createQueuedMessageRequestSchema.extend({
     id: z.string(),
     clientSubmissionId: z.string(),

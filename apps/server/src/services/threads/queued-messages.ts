@@ -190,6 +190,7 @@ export interface CreateQueuedMessageForThreadArgs {
   payload: CreateQueuedMessageRequest;
   thread: Thread;
   startWhenIdle?: boolean;
+  steerWhenActive?: boolean;
 }
 
 function admitQueuedMessage(
@@ -225,7 +226,11 @@ export async function createQueuedMessageForThread(
   const submissionId = payload.clientSubmissionId;
   const fingerprint = createHash("sha256")
     .update(
-      JSON.stringify({ payload, startWhenIdle: args.startWhenIdle === true }),
+      JSON.stringify({
+        payload,
+        startWhenIdle: args.startWhenIdle === true,
+        ...(args.steerWhenActive ? { steerWhenActive: true } : {}),
+      }),
     )
     .digest("hex");
   const readReceipt = (db: DbQueryConnection): ThreadQueuedMessage | null => {
@@ -302,12 +307,13 @@ export async function createQueuedMessageForThread(
           // and runs when the stop lands rather than joining the rows the
           // manual-stop pause holds back.
           waitingOn:
-            args.startWhenIdle &&
-            (currentThread.status === "idle" ||
-              currentThread.status === "error")
-              ? null
-              : currentThread.status === "stopping"
-                ? { kind: "stopping" }
+            currentThread.status === "stopping"
+              ? { kind: "stopping" }
+              : args.steerWhenActive ||
+                  (args.startWhenIdle &&
+                    (currentThread.status === "idle" ||
+                      currentThread.status === "error"))
+                ? null
                 : { kind: "thread-busy" },
           sendAt: null,
           payload: { kind: "inline" },
