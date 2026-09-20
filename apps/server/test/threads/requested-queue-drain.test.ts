@@ -471,15 +471,17 @@ describe("the requested queue drain", () => {
         let hold = held;
         let hookCalls = 0;
         installHooks({
-          "message.dispatch": [{
-            pluginId: "limiter",
-            handler: () => {
-              hookCalls += 1;
-              return hold
-                ? { action: "wait", reason: "At capacity" } as const
-                : { action: "proceed" } as const;
+          "message.dispatch": [
+            {
+              pluginId: "limiter",
+              handler: () => {
+                hookCalls += 1;
+                return hold
+                  ? ({ action: "wait", reason: "At capacity" } as const)
+                  : ({ action: "proceed" } as const);
+              },
             },
-          }],
+          ],
         });
         const args = {
           thread,
@@ -491,17 +493,24 @@ describe("the requested queue drain", () => {
         };
         const before = turnRequests(harness, thread.id).length;
         const accepted = await acceptThreadSendRequest(harness.deps, args);
-        await runQueuedMessageDispatch(harness.deps, {
-          kind: "thread-ready",
-          threadId: thread.id,
-        });
         expect(hookCalls).toBe(1);
-        expect(turnRequests(harness, thread.id)).toHaveLength(before + (held ? 0 : 1));
-        expect(await acceptThreadSendRequest(harness.deps, args)).toEqual(accepted);
+        expect(turnRequests(harness, thread.id)).toHaveLength(
+          before + (held ? 0 : 1),
+        );
+        expect(await acceptThreadSendRequest(harness.deps, args)).toEqual(
+          accepted,
+        );
         expect(hookCalls).toBe(1);
         if (held) {
-          expect(listQueuedThreadMessages(harness.db, thread.id)[1]?.waitingOn)
-            .toBe(JSON.stringify({ kind: "plugin", pluginId: "limiter", reason: "At capacity" }));
+          expect(
+            listQueuedThreadMessages(harness.db, thread.id)[1]?.waitingOn,
+          ).toBe(
+            JSON.stringify({
+              kind: "plugin",
+              pluginId: "limiter",
+              reason: "At capacity",
+            }),
+          );
           hold = false;
           vi.advanceTimersByTime(1_001);
           await runPluginWake(harness);
@@ -528,24 +537,27 @@ describe("the requested queue drain", () => {
       const entered = createDeferredPromise<void>();
       const release = createDeferredPromise<void>();
       installHooks({
-        "message.dispatch": [{
-          pluginId: "barrier",
-          handler: async () => {
-            entered.resolve();
-            await release.promise;
-            return { action: "proceed" } as const;
+        "message.dispatch": [
+          {
+            pluginId: "barrier",
+            handler: async () => {
+              entered.resolve();
+              await release.promise;
+              return { action: "proceed" } as const;
+            },
           },
-        }],
+        ],
       });
       const before = turnRequests(harness, thread.id).length;
-      const send = (id: string) => acceptThreadSendRequest(harness.deps, {
-        thread,
-        payload: {
-          input: textInput(id),
-          mode: "steer-if-active",
-          clientSubmissionId: id,
-        },
-      });
+      const send = (id: string) =>
+        acceptThreadSendRequest(harness.deps, {
+          thread,
+          payload: {
+            input: textInput(id),
+            mode: "steer-if-active",
+            clientSubmissionId: id,
+          },
+        });
       const first = send("steer-a");
       await entered.promise;
       const second = send("steer-b");
@@ -553,8 +565,9 @@ describe("the requested queue drain", () => {
       try {
         await vi.waitFor(() => {
           for (const id of ["steer-a", "steer-b", "steer-c"]) {
-            expect(getQueuedThreadMessage(harness.db, `qmsg_${thread.id}_${id}`))
-              .not.toBeNull();
+            expect(
+              getQueuedThreadMessage(harness.db, `qmsg_${thread.id}_${id}`),
+            ).not.toBeNull();
           }
         });
       } finally {

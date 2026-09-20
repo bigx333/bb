@@ -1433,7 +1433,7 @@ describe("service tier execution lifecycle", () => {
       ).toMatchObject([
         {
           input: textInput("change direction now"),
-          target: { mode: "auto", expectedTurnId: "turn-keyed-steer" },
+          target: { mode: "steer", expectedTurnId: "turn-keyed-steer" },
         },
       ]);
       expect(await acceptThreadSendRequest(harness.deps, args)).toEqual(first);

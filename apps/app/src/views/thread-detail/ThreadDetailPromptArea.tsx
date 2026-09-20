@@ -1220,13 +1220,8 @@ export function ThreadDetailPromptArea({
       if (!isQueuingMessage) promptDraft.clearIfCurrentMatches(submittedDraft);
       setBottomAttachmentError(null);
       if (isQueuingMessage) {
-        const request = buildCreateQueuedFollowUpRequest({
-          threadId: thread.id,
-          input: submittedInput,
-          execution: followUpExecutionSelection,
-        });
-        if (request) {
-          await createQueuedMessage.mutateAsync(request);
+        if (retainedRequest) {
+          await createQueuedMessage.mutateAsync(retainedRequest);
           promptDraft.clearIfCurrentMatches(submittedDraft);
         }
       } else {

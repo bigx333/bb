@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import {
   claimNextQueuedThreadMessageGroup,
+  claimQueuedThreadMessage,
   claimQueuedThreadMessageGroup,
   createQueuedThreadMessageInTransaction,
   deleteClaimedQueuedThreadMessageBatchInTransaction,
@@ -118,7 +119,7 @@ type ClaimedQueuedMessage = Exclude<
 >[number];
 
 interface SendClaimedQueuedMessageArgs {
-  mode: SendQueuedMessageMode;
+  mode: SendMessageRequest["mode"];
   queuedMessages: ClaimedQueuedMessage[];
   /** True for an explicit "send now"; false for an ordinary drain. */
   sendNow: boolean;
@@ -126,7 +127,7 @@ interface SendClaimedQueuedMessageArgs {
 }
 
 interface SendClaimedQueuedMessageForThreadArgs {
-  mode: SendQueuedMessageMode;
+  mode: SendMessageRequest["mode"];
   queuedMessages: ClaimedQueuedMessage[];
   sendNow: boolean;
   thread: Thread;
@@ -352,10 +353,39 @@ export async function createQueuedMessageForThread(
       providerId: thread.providerId,
     });
   }
-  if (
-    (currentThread.status === "idle" && hasProviderSession) ||
-    args.startWhenIdle
-  ) {
+  if (args.startWhenIdle) {
+    const claimed = claimQueuedThreadMessage(
+      deps.db,
+      deps.hub,
+      queuedMessage.id,
+    );
+    if (claimed) {
+      try {
+        await withActiveQueuedMessageClaims([claimed], () =>
+          sendClaimedQueuedMessage(deps, {
+            mode: args.steerWhenActive ? "steer-if-active" : "queue-if-active",
+            queuedMessages: [claimed],
+            sendNow: false,
+            threadId: thread.id,
+          }),
+        );
+      } catch (error) {
+        releaseQueuedMessageClaims(deps, [claimed]);
+        if (
+          !isQueuedMessageClaimLostError(error) &&
+          !isQueuedMessageAutoSendPausedError(error) &&
+          !(error instanceof ThreadContextClearInProgressError) &&
+          !isCommandTimeoutError(error)
+        ) {
+          recordQueuedMessageDrainFailure(deps, {
+            error,
+            row: claimed,
+            thread: currentThread,
+          });
+        }
+      }
+    }
+  } else if (currentThread.status === "idle" && hasProviderSession) {
     requestQueuedMessageDispatch(deps, {
       kind: "thread-ready",
       threadId: thread.id,
@@ -395,7 +425,7 @@ function respectsManualStopPause(
 
 function sendQueuedMessagePayload(
   queuedMessage: ThreadQueuedMessage,
-  mode: SendQueuedMessageMode,
+  mode: SendMessageRequest["mode"],
   senderThreadId: string | null,
 ): SendMessageRequest {
   return {
