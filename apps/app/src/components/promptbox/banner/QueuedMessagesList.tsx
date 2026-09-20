@@ -730,7 +730,7 @@ function QueuedMessageWaitLine({
   const icon = pending
     ? failed
       ? "AlertCircle"
-      : "Spinner"
+      : "Loading"
     : queuedMessageWaitIcon(queuedMessage);
   const countdownInstant = queuedMessageCountdownInstant(queuedMessage);
   const countdown =
