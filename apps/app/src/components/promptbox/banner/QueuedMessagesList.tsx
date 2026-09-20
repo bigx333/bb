@@ -716,7 +716,7 @@ function QueuedMessageWaitLine({
   );
   const now = useSecondTick();
   const label = pending
-    ? (pending.error ?? "Waiting for server confirmation")
+    ? (pending.error ?? "Connecting to server")
     : describeQueuedMessageWait({
         failureReason: queuedMessage.failureReason,
         now,
@@ -727,7 +727,11 @@ function QueuedMessageWaitLine({
       });
   if (label === null) return null;
   const failed = pending?.error != null || queuedMessage.failureReason !== null;
-  const icon = queuedMessageWaitIcon(queuedMessage);
+  const icon = pending
+    ? failed
+      ? "AlertCircle"
+      : "Spinner"
+    : queuedMessageWaitIcon(queuedMessage);
   const countdownInstant = queuedMessageCountdownInstant(queuedMessage);
   const countdown =
     countdownInstant === null
@@ -743,7 +747,11 @@ function QueuedMessageWaitLine({
       )}
     >
       {icon !== null ? (
-        <Icon name={icon} className="size-3 shrink-0" aria-hidden />
+        <Icon
+          name={icon}
+          className={cn("size-3 shrink-0", pending && !failed && "animate-spin")}
+          aria-hidden
+        />
       ) : queuedMessage.waitingOn?.kind === "plugin" ? (
         <PluginIcon
           pluginId={queuedMessage.waitingOn.pluginId}
