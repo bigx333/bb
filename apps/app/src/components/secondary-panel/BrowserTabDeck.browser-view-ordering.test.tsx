@@ -264,7 +264,7 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
       await act(async () => {});
       expect(
         screen.getByText(
-          "This tab is no longer connected.",
+          "This BB Browser tab is disconnected.",
         ),
       ).not.toBeNull();
       expect(attachments).toEqual([]);
@@ -304,6 +304,10 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
     const reopen = await screen.findByRole("button", {
       name: "Reopen tab",
     });
+    expect(attachments).toEqual([]);
+    const savedUrl = screen.getByRole("textbox", { name: "Saved URL" });
+    expect(savedUrl.getAttribute("value")).toBe(tab.url);
+    fireEvent.focus(savedUrl);
     expect(attachments).toEqual([]);
     fireEvent.click(reopen);
     expect(onUpdate).toHaveBeenCalledWith({

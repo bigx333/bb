@@ -137,13 +137,19 @@ export function BrowserTabDeck({
       verifiedTarget.generation !== target.generation)
   ) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
-        <p>This tab is no longer connected.</p>
-        {verifiedTarget !== null && canHandleBrowserCommands && (
-          <>
-            <p className="max-w-sm">
-              Reopen this page in BB Browser. You may need to sign in again.
-            </p>
+      <div className="flex min-h-0 flex-1 flex-col bg-sidebar">
+        <div className="shrink-0 px-3 py-1.5">
+          <input
+            aria-label="Saved URL"
+            readOnly
+            value={activeBrowserTab.url}
+            onFocus={(event) => event.currentTarget.select()}
+            className="h-8 w-full rounded-full border border-border/70 bg-background/70 px-3 font-mono text-sm text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
+          <p>This BB Browser tab is disconnected.</p>
+          {verifiedTarget !== null && canHandleBrowserCommands && (
             <Button
               variant="outline"
               onClick={() =>
@@ -157,8 +163,8 @@ export function BrowserTabDeck({
             >
               Reopen tab
             </Button>
-          </>
-        )}
+          )}
+        </div>
       </div>
     );
   }
