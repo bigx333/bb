@@ -101,9 +101,10 @@ function requireElement(container: ParentNode, selector: string): Element {
 }
 
 describe("MarkdownPreview", () => {
-  it("shares one observer and observes content width only for table previews", () => {
+  it("shares table observations without reading computed styles during mount", () => {
     const { notifyResize, observed, observerCount } =
       mockResizeObserverDeliveries();
+    const readStyle = vi.spyOn(window, "getComputedStyle");
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
       bottom: 100,
       height: 100,
@@ -143,7 +144,9 @@ describe("MarkdownPreview", () => {
         (breakout) => breakout?.style.getPropertyValue("--md-content-w") === "",
       ),
     ).toBe(true);
+    expect(readStyle).not.toHaveBeenCalled();
     notifyResize();
+    expect(readStyle).toHaveBeenCalled();
     expect(
       breakouts.every(
         (breakout) =>
