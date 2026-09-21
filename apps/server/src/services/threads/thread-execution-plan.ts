@@ -13,7 +13,7 @@ import type { AppDeps } from "../../types.js";
 import type { ProviderRegistryService } from "../providers/provider-registry.js";
 import {
   clampPermissionModeToHost,
-  isHostPermissionCeilingConflictError,
+  isPermissionCeilingConflictError,
   resolveEnvironmentHostId,
 } from "../hosts/permission-ceiling.js";
 import {
@@ -361,7 +361,7 @@ export async function tryResolveExistingThreadExecutionPlan(
     if (
       !hasExecutionInput(args.input) &&
       (isProviderCapabilityValidationError(error) ||
-        isHostPermissionCeilingConflictError(error))
+        isPermissionCeilingConflictError(error))
     ) {
       return null;
     }

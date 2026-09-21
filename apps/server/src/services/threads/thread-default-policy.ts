@@ -9,7 +9,7 @@ import type {
 } from "@bb/domain";
 import { getEnvironment } from "@bb/db";
 import { DEFAULT_ENVIRONMENT_PROVIDER_ID } from "../environments/environment-provider-ids.js";
-import { PERSONAL_PROJECT_ID, clampPermissionModeToCeiling } from "@bb/domain";
+import { PERSONAL_PROJECT_ID } from "@bb/domain";
 import type {
   EnvironmentArgs,
   ProviderEnvironmentArgs,
@@ -19,6 +19,7 @@ import type { WorkSessionDeps } from "../../types.js";
 import type { ProviderRegistryService } from "../providers/provider-registry.js";
 import { ApiError } from "../../errors.js";
 import { callHostRetryableOnlineRpc } from "../hosts/online-rpc.js";
+import { clampPermissionModeToParentThread } from "../hosts/permission-ceiling.js";
 import { requireConnectedPrimaryHostId } from "../hosts/primary-host.js";
 import { resolveProjectWorkspaceTarget } from "../projects/project-workspace.js";
 import { resolveDefaultWorktreeBaseBranch } from "../projects/worktree-base-branch.js";
@@ -427,13 +428,12 @@ export function resolveThreadExecutionPermissionMode(
   const supported = registry.getSupportedPermissionModes(
     args.thread.providerId,
   );
-  return (
-    clampPermissionModeToCeiling({
-      ceiling,
-      permissionMode,
-      ...(supported ? { permissionModes: supported } : {}),
-    }) ?? ceiling
-  );
+  return clampPermissionModeToParentThread({
+    ceiling,
+    permissionMode,
+    providerId: args.thread.providerId,
+    ...(supported ? { permissionModes: supported } : {}),
+  });
 }
 
 function resolvePreferredThreadExecutionPermissionMode(

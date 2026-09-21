@@ -571,6 +571,47 @@ describe("thread runtime config", () => {
     });
   });
 
+  it("blames the parent ceiling when an explicit full request cannot fit a full-only provider", async () => {
+    await withTestHarness(async (harness) => {
+      const { host } = seedHostSession(harness.deps, {
+        id: "host-runtime-child-parent-ceiling-conflict",
+      });
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+      });
+      const parentThread = seedThread(harness.deps, {
+        projectId: project.id,
+        environmentId: environment.id,
+      });
+      seedThreadRuntimeState(harness.deps, {
+        threadId: parentThread.id,
+        environmentId: environment.id,
+        providerThreadId: "provider-parent-ceiling-conflict",
+        permissionMode: "auto",
+      });
+      const childThread = seedThread(harness.deps, {
+        projectId: project.id,
+        environmentId: environment.id,
+        parentThreadId: parentThread.id,
+        providerId: "pi",
+      });
+
+      await expect(
+        buildExecutionOptions(
+          harness.deps,
+          { model: "openai/codex-mini", permissionMode: "full" },
+          { threadId: childThread.id },
+        ),
+      ).rejects.toThrow(
+        "This thread's parent limits permission mode to auto, and provider pi requires a higher mode.",
+      );
+    });
+  });
+
   it("treats ghost parent references as root-thread execution defaults", async () => {
     await withTestHarness(async (harness) => {
       const { host } = seedHostSession(harness.deps, {

@@ -757,8 +757,8 @@ describe("resolveThreadExecutionPermissionMode", () => {
     ).toBe("full");
   });
 
-  it("never upgrades an inherited mode past the parent for provider support", () => {
-    expect(
+  it("reports a parent ceiling conflict when no supported mode fits under the parent", () => {
+    expect(() =>
       resolveThreadExecutionPermissionMode(registry, {
         parentThread: makeParentThread(),
         parentThreadExecutionPermissionMode: "workspace-write",
@@ -768,7 +768,39 @@ describe("resolveThreadExecutionPermissionMode", () => {
           providerId: "pi",
         }),
       }),
-    ).toBe("accept-edits");
+    ).toThrow(
+      "This thread's parent limits permission mode to accept-edits, and provider pi requires a higher mode.",
+    );
+  });
+
+  it("reports a parent ceiling conflict rather than blaming an explicit full request", () => {
+    expect(() =>
+      resolveThreadExecutionPermissionMode(registry, {
+        requestedPermissionMode: "full",
+        parentThread: makeParentThread(),
+        parentThreadExecutionPermissionMode: "auto",
+        thread: makeThread({
+          parentThreadId: "thr-parent-1",
+          providerId: "pi",
+        }),
+      }),
+    ).toThrow(
+      "This thread's parent limits permission mode to auto, and provider pi requires a higher mode.",
+    );
+  });
+
+  it("keeps a full-only child under a full parent", () => {
+    expect(
+      resolveThreadExecutionPermissionMode(registry, {
+        requestedPermissionMode: "full",
+        parentThread: makeParentThread(),
+        parentThreadExecutionPermissionMode: "full",
+        thread: makeThread({
+          parentThreadId: "thr-parent-1",
+          providerId: "pi",
+        }),
+      }),
+    ).toBe("full");
   });
 
   it("clamps an explicitly requested mode to the parent's mode", () => {

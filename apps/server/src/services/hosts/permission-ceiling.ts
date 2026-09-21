@@ -11,12 +11,19 @@ interface ClampPermissionModeToHostArgs {
   providerId?: string;
 }
 
-class HostPermissionCeilingConflictError extends ApiError {}
+interface ClampPermissionModeToParentThreadArgs {
+  ceiling: PermissionMode;
+  permissionMode: PermissionMode;
+  permissionModes?: readonly PermissionMode[];
+  providerId: string;
+}
 
-export function isHostPermissionCeilingConflictError(
+class PermissionCeilingConflictError extends ApiError {}
+
+export function isPermissionCeilingConflictError(
   error: unknown,
-): error is HostPermissionCeilingConflictError {
-  return error instanceof HostPermissionCeilingConflictError;
+): error is PermissionCeilingConflictError {
+  return error instanceof PermissionCeilingConflictError;
 }
 
 export function getHostPermissionCeiling(
@@ -49,10 +56,28 @@ export function clampPermissionModeToHost(
     ...(supported ? { permissionModes: supported } : {}),
   });
   if (clamped === null) {
-    throw new HostPermissionCeilingConflictError(
+    throw new PermissionCeilingConflictError(
       400,
       "host_permission_ceiling_conflict",
       `This machine limits permission mode to ${ceiling}, and provider ${args.providerId} requires a higher mode.`,
+    );
+  }
+  return clamped;
+}
+
+export function clampPermissionModeToParentThread(
+  args: ClampPermissionModeToParentThreadArgs,
+): PermissionMode {
+  const clamped = clampPermissionModeToCeiling({
+    ceiling: args.ceiling,
+    permissionMode: args.permissionMode,
+    ...(args.permissionModes ? { permissionModes: args.permissionModes } : {}),
+  });
+  if (clamped === null) {
+    throw new PermissionCeilingConflictError(
+      400,
+      "parent_permission_ceiling_conflict",
+      `This thread's parent limits permission mode to ${args.ceiling}, and provider ${args.providerId} requires a higher mode.`,
     );
   }
   return clamped;
