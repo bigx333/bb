@@ -1,4 +1,4 @@
-import type { TimelineRow } from "@bb/server-contract";
+import type { ThreadTimelineResponse, TimelineRow } from "@bb/server-contract";
 
 const DEFAULT_MAX_ENTRIES = 64;
 const DEFAULT_RING_SIZE = 4;
@@ -9,17 +9,23 @@ interface TimelineLatestRows {
 }
 
 interface TimelineLatestRowsCache {
+  getResponse(
+    threadId: string,
+    paramsKey: string,
+    maxSeq: number,
+  ): ThreadTimelineResponse | undefined;
   get(
     threadId: string,
     paramsKey: string,
     maxSeq: number,
   ): TimelineLatestRows | undefined;
   invalidateThread(threadId: string): void;
-  set(threadId: string, paramsKey: string, value: TimelineLatestRows): void;
+  set(threadId: string, paramsKey: string, value: ThreadTimelineResponse): void;
   readonly size: number;
 }
 
 interface TimelineLatestRowsCacheEntry {
+  response: ThreadTimelineResponse;
   ring: TimelineLatestRows[];
   threadId: string;
 }
@@ -37,6 +43,18 @@ export function createTimelineLatestRowsCache(
   }
 
   return {
+    getResponse(threadId, paramsKey, maxSeq) {
+      const entry = entries.get(paramsKey);
+      if (
+        entry === undefined ||
+        entry.threadId !== threadId ||
+        entry.response.maxSeq !== maxSeq
+      ) {
+        return undefined;
+      }
+      touch(paramsKey, entry);
+      return entry.response;
+    },
     get(threadId, paramsKey, maxSeq) {
       const entry = entries.get(paramsKey);
       if (entry === undefined || entry.threadId !== threadId) {
@@ -55,7 +73,10 @@ export function createTimelineLatestRowsCache(
     set(threadId, paramsKey, value) {
       const cached = entries.get(paramsKey);
       const entry =
-        cached?.threadId === threadId ? cached : { ring: [], threadId };
+        cached?.threadId === threadId
+          ? cached
+          : { response: value, ring: [], threadId };
+      entry.response = value;
       const ring = entry.ring;
       const existingIndex = ring.findIndex(
         (entry) => entry.maxSeq === value.maxSeq,
@@ -63,7 +84,7 @@ export function createTimelineLatestRowsCache(
       if (existingIndex !== -1) {
         ring.splice(existingIndex, 1);
       }
-      ring.push(value);
+      ring.push({ maxSeq: value.maxSeq, rows: value.rows });
       while (ring.length > ringSize) {
         ring.shift();
       }

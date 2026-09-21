@@ -439,45 +439,47 @@ export function registerThreadDataRoutes(app: Hono, deps: AppDeps): void {
       includeDiagnosticOperations,
       completedTurnDisplay,
     };
-    const full = timelineCache.getOrBuild(
-      thread.id,
-      buildThreadTimelineCacheKey({ ...keyArgs, maxSeq }),
-      () => {
-        const { profile, response } = buildThreadTimelineWithProfile(
-          deps.db,
-          thread,
-          {
-            completedTurnDisplay,
-            eventBudget,
-            includeDiagnosticOperations,
-            includeNestedRows,
-            maxInlineOutputChars: DEFAULT_MAX_INLINE_OUTPUT_CHARS,
-            maxSeq,
-            page,
-            providerDisplayName,
-            planCommand: resolveProviderPlanCommand(
-              deps.providerRegistry,
-              thread.providerId,
-            ),
-            summaryOnly,
-          },
-        );
-        slowTimelineBuildLogger.log({ profile, threadId: thread.id });
-        const truncated = truncateTimelineResponseOutputs(
-          response,
-          DEFAULT_MAX_INLINE_OUTPUT_CHARS,
-        );
-        return includeNestedRows
-          ? truncated
-          : previewTimelineResponseOutputs(truncated);
-      },
-    );
+    const paramsKey = buildThreadTimelineParamsKey(keyArgs);
+    const full =
+      timelineLatestRowsCache.getResponse(thread.id, paramsKey, maxSeq) ??
+      timelineCache.getOrBuild(
+        thread.id,
+        buildThreadTimelineCacheKey({ ...keyArgs, maxSeq }),
+        () => {
+          const { profile, response } = buildThreadTimelineWithProfile(
+            deps.db,
+            thread,
+            {
+              completedTurnDisplay,
+              eventBudget,
+              includeDiagnosticOperations,
+              includeNestedRows,
+              maxInlineOutputChars: DEFAULT_MAX_INLINE_OUTPUT_CHARS,
+              maxSeq,
+              page,
+              providerDisplayName,
+              planCommand: resolveProviderPlanCommand(
+                deps.providerRegistry,
+                thread.providerId,
+              ),
+              summaryOnly,
+            },
+          );
+          slowTimelineBuildLogger.log({ profile, threadId: thread.id });
+          const truncated = truncateTimelineResponseOutputs(
+            response,
+            DEFAULT_MAX_INLINE_OUTPUT_CHARS,
+          );
+          return includeNestedRows
+            ? truncated
+            : previewTimelineResponseOutputs(truncated);
+        },
+      );
 
     const afterSequence = parseOptionalInteger(
       query.afterSequence,
       "afterSequence",
     );
-    const paramsKey = buildThreadTimelineParamsKey(keyArgs);
     const previous =
       afterSequence === undefined
         ? undefined
@@ -486,10 +488,7 @@ export function registerThreadDataRoutes(app: Hono, deps: AppDeps): void {
       previous === undefined
         ? undefined
         : computeTimelineRowDelta(previous.rows, full.rows);
-    timelineLatestRowsCache.set(thread.id, paramsKey, {
-      maxSeq,
-      rows: full.rows,
-    });
+    timelineLatestRowsCache.set(thread.id, paramsKey, full);
 
     return context.json({
       ...(delta === undefined ? full : { ...full, rows: [], delta }),
