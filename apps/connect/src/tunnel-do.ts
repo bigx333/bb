@@ -303,9 +303,22 @@ export class TunnelDO {
   ): Promise<Response> {
     const streamId = this.nextStreamId++;
     const hasBody = request.body !== null;
+    const startedAt = Date.now();
 
     const responsePromise = new Promise<Response>((resolve) => {
       const timeout = setTimeout(() => {
+        console.warn("Tunnel HTTP response timed out", {
+          hostname: url.hostname,
+          method: request.method,
+          pathname: url.pathname,
+          streamId,
+          elapsedMs: Date.now() - startedAt,
+          timeoutMs: RESP_HEAD_TIMEOUT_MS,
+          tunnelReadyState: tunnel.readyState,
+          isCurrentTunnel: tunnel === this.tunnelSocket(),
+          pendingRequestCount: this.pendingHttp.size,
+          target: target ?? null,
+        });
         this.failHttpStream(
           streamId,
           504,

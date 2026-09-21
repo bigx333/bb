@@ -1583,6 +1583,7 @@ describe("TunnelDO targeted request with old client", () => {
 
   it("stamps target on open-http when protocol version is >= 1", async () => {
     vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const sent: Uint8Array[] = [];
       const state = mockDoState({ protocolVersion: 1 });
@@ -1603,9 +1604,12 @@ describe("TunnelDO targeted request with old client", () => {
       );
 
       const pending = dob.fetch(
-        new Request("https://do.internal/foo", {
+        new Request("https://do.internal/foo?token=private-query", {
           method: "GET",
-          headers: { [TUNNEL_TARGET_HEADER]: "8000" },
+          headers: {
+            [TUNNEL_TARGET_HEADER]: "8000",
+            cookie: "session=private-cookie",
+          },
         }),
       );
 
@@ -1614,7 +1618,7 @@ describe("TunnelDO targeted request with old client", () => {
       expect(frame.type).toBe("open-http");
       if (frame.type !== "open-http") throw new Error("unreachable");
       expect(frame.target).toBe("8000");
-      expect(frame.path).toBe("/foo");
+      expect(frame.path).toBe("/foo?token=private-query");
       expect(
         frame.headers.every(([n]) => n.toLowerCase() !== TUNNEL_TARGET_HEADER),
       ).toBe(true);
@@ -1622,7 +1626,24 @@ describe("TunnelDO targeted request with old client", () => {
       vi.advanceTimersByTime(30_000);
       const timedOut = await pending;
       expect(timedOut.status).toBe(504);
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        "Tunnel HTTP response timed out",
+        {
+          hostname: "do.internal",
+          method: "GET",
+          pathname: "/foo",
+          streamId: frame.streamId,
+          elapsedMs: 30_000,
+          timeoutMs: 30_000,
+          tunnelReadyState: 1,
+          isCurrentTunnel: true,
+          pendingRequestCount: 1,
+          target: "8000",
+        },
+      );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("private-");
     } finally {
+      warn.mockRestore();
       vi.useRealTimers();
     }
   });
