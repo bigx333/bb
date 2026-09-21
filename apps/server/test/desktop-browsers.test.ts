@@ -961,6 +961,30 @@ describe("desktop browser public API", () => {
     });
   });
 
+  it("keeps personal tabs restorable after native sync and a desktop restart", async () => {
+    await withBrowserTest(async (test) => {
+      const tab = { ...test.tab(), profile: { kind: "personal" as const } };
+      test.change({}, [test.tab()]);
+      test.change({}, [tab]);
+      const restored = {
+        id: tab.tabId,
+        kind: "browser",
+        environmentId: null,
+        title: tab.title,
+        url: tab.url,
+      };
+      expect(test.stored()).toEqual([restored]);
+      test.change({}, []);
+      test.change({ instanceId: "restarted-window", generation: "new" }, []);
+      expect(test.stored()).toEqual([restored]);
+      test.setTabs([tab]);
+      expect(
+        (await test.post("close", { ...test.scope, tabId: tab.tabId })).status,
+      ).toBe(200);
+      expect(test.stored()).toEqual([]);
+    });
+  });
+
   it("updates persisted targets after same-window reconnect and ignores deletion from its old generation", async () => {
     await withBrowserTest(async (test) => {
       const tab = test.tab();

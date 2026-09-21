@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type {
   BbDesktopBrowserApi,
   BbDesktopBrowserAttachRequest,
@@ -273,6 +273,46 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
       expect(attachments[0]?.existingOnly).toBe(true);
     },
   );
+
+  it("offers explicit recovery of a saved URL on a new desktop connection", async () => {
+    const { api, attachments } = createRecordingBrowserApi();
+    api.getTarget = async () => ({
+      hostId: "host-1",
+      instanceId: "new-window",
+      generation: "new-generation",
+    });
+    installDesktopBrowser(api);
+    const onUpdate = vi.fn();
+    const tab = {
+      ...makeBrowserTab("stale-tab", "https://example.com/saved"),
+      desktopTarget: {
+        hostId: "host-1",
+        instanceId: "old-window",
+        generation: "old-generation",
+      },
+    };
+    render(
+      <BrowserTabDeck
+        browserTabs={[tab]}
+        activeBrowserTabId={tab.id}
+        environmentId="env-1"
+        canShowNativeBrowserView
+        threadId="thread-1"
+        onUpdate={onUpdate}
+      />,
+    );
+    const reopen = await screen.findByRole("button", {
+      name: "Reopen on this desktop",
+    });
+    expect(attachments).toEqual([]);
+    fireEvent.click(reopen);
+    expect(onUpdate).toHaveBeenCalledWith({
+      tabId: tab.id,
+      url: tab.url,
+      title: tab.title,
+      reopenOnThisDesktop: true,
+    });
+  });
 
   it("attaches a URL-bearing tab hidden and shows only after attach plus compact drawer readiness", async () => {
     const { api, calls, attachments, bounds, visibility } =
