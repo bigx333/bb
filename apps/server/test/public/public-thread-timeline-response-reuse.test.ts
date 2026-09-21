@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { defaultAppSettings, turnScope } from "@bb/domain";
+import { defaultAppSettings, threadScope, turnScope } from "@bb/domain";
 import { threadTimelineResponseSchema } from "@bb/server-contract";
 import * as timelineBuilder from "../../src/services/threads/timeline.js";
 import { readJson } from "../helpers/json.js";
@@ -81,15 +81,10 @@ it("reuses an unchanged large timeline and rebuilds after new events", async () 
       expect(build).not.toHaveBeenCalled();
       seedEvent(harness.deps, {
         ...scope,
+        scope: threadScope(),
         sequence,
-        type: "item/completed",
-        data: {
-          item: {
-            id: "late-message",
-            type: "agentMessage",
-            text: "Late result",
-          },
-        },
+        type: "system/manager/user_message",
+        data: { text: "New user message" },
       });
       const updated = await fetchTimeline();
       expect(updated.maxSeq).toBe(sequence);
