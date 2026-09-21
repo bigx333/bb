@@ -42,12 +42,20 @@ export function PushNotificationsHost() {
 
   useEffect(() => {
     Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowBanner: false,
-        shouldShowList: true,
-        shouldPlaySound: false,
-        shouldSetBadge: false,
-      }),
+      handleNotification: async (notification) => {
+        traceNotification("foreground-presentation-policy", {
+          nativeDate: notification.date,
+          notificationId: notification.request.identifier,
+          showBanner: false,
+          showList: true,
+        });
+        return {
+          shouldShowBanner: false,
+          shouldShowList: true,
+          shouldPlaySound: false,
+          shouldSetBadge: false,
+        };
+      },
     });
     return () => Notifications.setNotificationHandler(null);
   }, []);
