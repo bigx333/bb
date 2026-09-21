@@ -264,7 +264,7 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
       await act(async () => {});
       expect(
         screen.getByText(
-          "This browser tab is unavailable on this desktop connection.",
+          "This tab is no longer connected.",
         ),
       ).not.toBeNull();
       expect(attachments).toEqual([]);
@@ -302,7 +302,7 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
       />,
     );
     const reopen = await screen.findByRole("button", {
-      name: "Reopen on this desktop",
+      name: "Reopen tab",
     });
     expect(attachments).toEqual([]);
     fireEvent.click(reopen);

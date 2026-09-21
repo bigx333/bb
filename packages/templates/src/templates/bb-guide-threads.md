@@ -392,7 +392,7 @@ Persisted panel tabs:
 
   Personal Browser tabs restore their saved URL after a desktop restart.
   Automation tabs remain bound to their original desktop session. An unavailable
-  tab offers Reopen on this desktop: this opens its saved URL in a new personal
+  tab offers Reopen tab: this opens its saved URL in a new personal
   tab and keeps the original tab. It does not transfer cookies or page history
   from an automation session. With the CLI or SDK thread-tabs APIs, append a
   browser descriptor with a fresh id, the saved url, and no desktopTarget to

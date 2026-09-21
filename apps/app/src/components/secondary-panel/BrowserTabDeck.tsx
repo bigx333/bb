@@ -138,12 +138,11 @@ export function BrowserTabDeck({
   ) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
-        <p>This browser tab is unavailable on this desktop connection.</p>
+        <p>This tab is no longer connected.</p>
         {verifiedTarget !== null && canHandleBrowserCommands && (
           <>
             <p className="max-w-sm">
-              Open the saved URL in a new tab using this desktop’s personal
-              browser. The previous page session will not be restored.
+              Reopen this page in BB Browser. You may need to sign in again.
             </p>
             <Button
               variant="outline"
@@ -156,7 +155,7 @@ export function BrowserTabDeck({
                 })
               }
             >
-              Reopen on this desktop
+              Reopen tab
             </Button>
           </>
         )}
