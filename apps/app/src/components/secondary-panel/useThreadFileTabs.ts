@@ -103,6 +103,7 @@ export interface UpdateBrowserTabArgs {
   tabId: string;
   url: string;
   title: string | null;
+  reopenOnThisDesktop?: true;
 }
 
 export type OpenSecondaryPanelTabRequest =
@@ -885,7 +886,11 @@ export function useThreadFileTabs({
   );
 
   const updateBrowserTab = useCallback(
-    ({ tabId, url, title }: UpdateBrowserTabArgs) => {
+    ({ tabId, url, title, reopenOnThisDesktop }: UpdateBrowserTabArgs) => {
+      if (reopenOnThisDesktop) {
+        openTab({ kind: "browser", url });
+        return;
+      }
       updateFixedPanelTabsState((state) => {
         const tab = findSecondaryPanelTab(state.secondary.tabs, tabId);
         if (!tab || !isBrowserTab(tab)) {
@@ -901,7 +906,7 @@ export function useThreadFileTabs({
         });
       });
     },
-    [updateFixedPanelTabsState],
+    [openTab, updateFixedPanelTabsState],
   );
 
   const clearActiveFileTabs = useCallback(() => {

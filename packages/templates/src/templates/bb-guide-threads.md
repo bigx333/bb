@@ -390,6 +390,14 @@ Persisted panel tabs:
   bb thread tabs show <thread-id>
   bb thread tabs set <thread-id> --expected-revision <n> --tabs-json '<json>'
 
+  Personal Browser tabs restore their saved URL after a desktop restart.
+  Automation tabs remain bound to their original desktop session. An unavailable
+  tab offers Reopen on this desktop: this opens its saved URL in a new personal
+  tab and keeps the original tab. It does not transfer cookies or page history
+  from an automation session. With the CLI or SDK thread-tabs APIs, append a
+  browser descriptor with a fresh id, the saved url, and no desktopTarget to
+  open the same kind of personal tab; preserve the existing tabs and revision.
+
 Lifecycle:
 
   bb thread retry [id]                     Retry the thread's failed turn

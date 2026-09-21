@@ -110,11 +110,15 @@ function toStoredBrowserTab(
     environmentId: null,
     title: tab.title.slice(0, 1024) || null,
     url: tab.url,
-    desktopTarget: {
-      hostId: scope.hostId,
-      instanceId: scope.instanceId,
-      generation: scope.generation,
-    },
+    ...(tab.profile.kind === "automation"
+      ? {
+          desktopTarget: {
+            hostId: scope.hostId,
+            instanceId: scope.instanceId,
+            generation: scope.generation,
+          },
+        }
+      : {}),
   };
 }
 
@@ -189,7 +193,12 @@ export function removeDesktopBrowserTab(
   const { stored, tabs } = readStoredTabs(deps.db, scope.threadId);
   if (!stored) return;
   const filtered = tabs.filter(
-    (tab) => !(tab.id === tabId && sameDesktopTarget(tab, scope)),
+    (tab) =>
+      !(
+        tab.kind === "browser" &&
+        tab.id === tabId &&
+        (tab.desktopTarget === undefined || sameDesktopTarget(tab, scope))
+      ),
   );
   if (filtered.length === tabs.length) return;
   replaceStoredThreadTabs(deps.db, {

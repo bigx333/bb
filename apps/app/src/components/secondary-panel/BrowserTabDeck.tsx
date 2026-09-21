@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BbDesktopBrowserTarget } from "@bb/desktop-contract";
+import { Button } from "@bb/shared-ui/button";
 import type { BrowserFixedPanelTab } from "@/lib/fixed-panel-tabs-state";
 import { getDesktopBrowserApi } from "@/lib/bb-desktop";
 import {
@@ -136,8 +137,29 @@ export function BrowserTabDeck({
       verifiedTarget.generation !== target.generation)
   ) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-        This browser tab is unavailable on this desktop connection.
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
+        <p>This browser tab is unavailable on this desktop connection.</p>
+        {verifiedTarget !== null && canHandleBrowserCommands && (
+          <>
+            <p className="max-w-sm">
+              Open the saved URL in a new tab using this desktop’s personal
+              browser. The previous page session will not be restored.
+            </p>
+            <Button
+              variant="outline"
+              onClick={() =>
+                onUpdate({
+                  tabId: activeBrowserTab.id,
+                  url: activeBrowserTab.url,
+                  title: activeBrowserTab.title,
+                  reopenOnThisDesktop: true,
+                })
+              }
+            >
+              Reopen on this desktop
+            </Button>
+          </>
+        )}
       </div>
     );
   }
