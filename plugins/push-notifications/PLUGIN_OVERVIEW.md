@@ -27,3 +27,8 @@ Channel switches apply to this server and save immediately. Browser permission i
 Every command takes `--help`. A failure with `--json` prints `{ "ok": false, "error": { "code", "message" } }` on stdout and the readable text on stderr.
 
 Agents can use the SDK’s plugin settings API for the same switches and `sdk.plugins.callRpc({ pluginId: "push-notifications", method: "notifications.test", input: { channel: "web" }, outputSchema: z.object({ ok: z.literal(true) }) })` to send a test. RPC input is validated by `pushNotificationsRpcContract`. Permission requests still require a click in the target client.
+
+The notification investigation branch supports `BB_NOTIFICATION_TRACE=1` on
+the server process for per-thread scheduling, read suppression, and Expo relay
+timing logs. This is temporary diagnostic instrumentation; see
+`docs/notification-timing-diagnostics.md` in the source checkout.

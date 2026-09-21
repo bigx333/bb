@@ -1,3 +1,4 @@
+import { traceNotification } from "@/lib/notification-trace";
 import * as Notifications from "expo-notifications";
 import { getThreadRoutePath } from "@bb/client-core";
 import { useRouter } from "expo-router";
@@ -53,6 +54,7 @@ export function PushNotificationsHost() {
 
   const openTarget = useCallback(
     async (target: PushNotificationTarget) => {
+      traceNotification("notification-open", { threadId: target.threadId });
       const profile = await resolvePushTargetProfile(target, {
         profiles: profilesRef.current,
         activeProfileId: activeProfileIdRef.current,
@@ -82,6 +84,10 @@ export function PushNotificationsHost() {
 
   useEffect(() => {
     const handle = (response: Notifications.NotificationResponse) => {
+      traceNotification("notification-response", {
+        nativeDate: response.notification.date,
+        notificationId: response.notification.request.identifier,
+      });
       const target = parsePushNotificationData(
         response.notification.request.content.data,
       );
@@ -103,6 +109,12 @@ export function PushNotificationsHost() {
         const content = notification.request.content;
         const target = parsePushNotificationData(content.data);
         if (!target) return;
+        traceNotification("notification-received", {
+          threadId: target.threadId,
+          nativeDate: notification.date,
+          notificationId: notification.request.identifier,
+        });
+        traceNotification("toast-requested", { threadId: target.threadId });
         toast.message(content.title ?? "bb", {
           description: content.body ?? undefined,
           duration: 8_000,
@@ -120,6 +132,7 @@ export function PushNotificationsHost() {
 
   useEffect(() => {
     const onChange = (state: AppStateStatus) => {
+      traceNotification("app-state", { state });
       if (state !== "active") return;
       void controller.refreshPermission().then(() => {
         if (activeProfile) void controller.sync(activeProfile);

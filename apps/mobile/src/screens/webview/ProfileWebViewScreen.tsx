@@ -1,4 +1,9 @@
 import {
+  notificationTraceEnabled,
+  traceNotification,
+} from "@/lib/notification-trace";
+import { notificationTraceInjection } from "@/lib/notification-trace/injection";
+import {
   MOBILE_BRIDGE_VERSION,
   buildBridgeInjectionScript,
   type NativeShellHandshake,
@@ -145,6 +150,7 @@ export function ProfileWebViewScreen() {
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
+      traceNotification("webview-app-state", { state });
       if (state === "active") bridge.send({ type: "resume" });
     });
     return () => subscription.remove();
@@ -280,9 +286,10 @@ export function ProfileWebViewScreen() {
         automaticallyAdjustContentInsets={false}
         contentInsetAdjustmentBehavior="never"
         webviewDebuggingEnabled={__DEV__}
-        injectedJavaScriptBeforeContentLoaded={buildBridgeInjectionScript(
-          handshake,
-        )}
+        injectedJavaScriptBeforeContentLoaded={
+          buildBridgeInjectionScript(handshake) +
+          (notificationTraceEnabled ? notificationTraceInjection : "")
+        }
         onMessage={bridge.onMessage}
         onShouldStartLoadWithRequest={(request) => {
           if (isShellNavigation(request.url, profile.serverUrl)) return true;
@@ -295,11 +302,13 @@ export function ProfileWebViewScreen() {
           const path = shellPathFromUrl(state.url, profile.serverUrl);
           if (path !== null) rememberPath(path);
         }}
-        onLoadEnd={() =>
+        onLoadStart={() => traceNotification("webview-load-start")}
+        onLoadEnd={() => {
+          traceNotification("webview-load-end");
           setLoad((previous) =>
             previous.kind === "loading" ? { kind: "ready" } : previous,
-          )
-        }
+          );
+        }}
         onError={(event) =>
           setLoad({
             kind: "failed",

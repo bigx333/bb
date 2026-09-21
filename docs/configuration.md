@@ -1584,3 +1584,8 @@ or with `bb settings general telemetryEnabled false`. The saved server-wide pref
 takes effect immediately and persists across restarts. SDK callers can use
 `system.updateGeneralSettings` with `telemetryEnabled`. `BB_TELEMETRY=false`
 always disables telemetry, even when the saved preference is enabled.
+
+This investigation branch has opt-in notification timing diagnostics:
+`BB_NOTIFICATION_TRACE=1` logs per-thread push scheduling and relay boundaries
+on the server; the mobile `preview` EAS profile sets
+`EXPO_PUBLIC_BB_NOTIFICATION_TRACE=1`. See [capture instructions](notification-timing-diagnostics.md).

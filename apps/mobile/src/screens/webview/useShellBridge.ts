@@ -1,3 +1,4 @@
+import { receivePageTrace } from "@/lib/notification-trace";
 import {
   buildBridgeEventScript,
   parsePageToShellMessage,
@@ -100,6 +101,7 @@ export function useShellBridge(
 
   const onMessage = useCallback(
     (event: WebViewMessageEvent) => {
+      if (receivePageTrace(event.nativeEvent.data)) return;
       const parsed = parsePageToShellMessage(event.nativeEvent.data);
       if (!parsed.ok) {
         if (__DEV__)

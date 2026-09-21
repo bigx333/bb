@@ -18,7 +18,10 @@
       }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_BB_NOTIFICATION_TRACE": "1"
+      }
     },
     "production": {
       "autoIncrement": true

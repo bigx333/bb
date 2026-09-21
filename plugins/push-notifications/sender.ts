@@ -213,6 +213,18 @@ export function createPushSender(args: CreatePushSenderArgs): PushSender {
   } = args;
   const fetchImpl = args.fetch ?? undiciFetch;
   const pending = new Map<string, PendingThreadPush>();
+  const trace = (stage: string, fields: Record<string, string | number>) => {
+    if (process.env.BB_NOTIFICATION_TRACE === "1") {
+      bb.log.info(
+        JSON.stringify({
+          diagnostic: "notification-trace",
+          stage,
+          at: now(),
+          ...fields,
+        }),
+      );
+    }
+  };
   const inFlight = new Set<Promise<void>>();
   let dispatcher: EnvHttpProxyAgent | null = null;
   let lastNetworkWarningAt = Number.NEGATIVE_INFINITY;
@@ -238,6 +250,7 @@ export function createPushSender(args: CreatePushSenderArgs): PushSender {
   ): void {
     if (!running) return;
     const eventAt = now();
+    trace("scheduled", { threadId, kind, coalesceMs });
     const existing = pending.get(threadId);
     if (existing) {
       existing.kinds.add(kind);
@@ -326,6 +339,11 @@ export function createPushSender(args: CreatePushSenderArgs): PushSender {
     }
     const lastReadAt = thread.lastReadAt ?? 0;
     if (lastReadAt >= thread.latestAttentionAt && lastReadAt >= entry.eventAt) {
+      trace("suppressed-read", {
+        threadId,
+        lastReadAt,
+        eventAt: entry.eventAt,
+      });
       return;
     }
     const resolved = await resolvePush(thread, entry);
@@ -369,7 +387,17 @@ export function createPushSender(args: CreatePushSenderArgs): PushSender {
     let sentCount = 0;
     let failure: string | null = null;
     for (const batch of chunks(deliveries, EXPO_PUSH_BATCH_SIZE)) {
+      for (const delivery of batch)
+        trace("relay-request", {
+          threadId: delivery.message.data.threadId,
+          eventAt: entry.eventAt,
+        });
       const result = await sendBatch(batch);
+      trace("relay-result", {
+        threadId,
+        sentCount: result.sentCount,
+        failure: result.failure ?? "none",
+      });
       sentCount += result.sentCount;
       failure ??= result.failure;
     }
