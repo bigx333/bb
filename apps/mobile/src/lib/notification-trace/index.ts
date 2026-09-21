@@ -34,17 +34,14 @@ const lines: string[] = [];
 let writing = Promise.resolve();
 let initialized = false;
 
-export function traceNotification(
-  stage: string,
-  fields: TraceFields = {},
-): void {
-  if (!notificationTraceEnabled) return;
-  const line = JSON.stringify({
-    at: Date.now(),
-    stage,
-    appState: AppState.currentState,
-    ...fields,
-  });
+let pending: string[] = [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushTrace(): void {
+  if (flushTimer !== null) clearTimeout(flushTimer);
+  flushTimer = null;
+  const batch = pending;
+  pending = [];
   writing = writing
     .then(async () => {
       const FileSystem = await import("expo-file-system/legacy");
@@ -57,11 +54,32 @@ export function traceNotification(
           lines.push(...saved.trim().split("\n").slice(-999));
         } catch {}
       }
-      lines.push(line);
+      lines.push(...batch);
       if (lines.length > 1000) lines.splice(0, lines.length - 1000);
       await FileSystem.writeAsStringAsync(path, `${lines.join("\n")}\n`);
     })
     .catch(() => undefined);
+}
+
+export function traceNotification(
+  stage: string,
+  fields: TraceFields = {},
+): void {
+  if (!notificationTraceEnabled) return;
+  pending.push(
+    JSON.stringify({
+      at: Date.now(),
+      stage,
+      appState: AppState.currentState,
+      ...fields,
+    }),
+  );
+  if (pending.length > 1000) pending.splice(0, pending.length - 1000);
+  if (stage === "app-state" || stage.startsWith("notification-")) {
+    flushTrace();
+  } else if (flushTimer === null) {
+    flushTimer = setTimeout(flushTrace, 500);
+  }
 }
 
 export function receivePageTrace(raw: string): boolean {
