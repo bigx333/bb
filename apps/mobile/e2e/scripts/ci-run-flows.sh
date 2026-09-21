@@ -49,16 +49,10 @@ export SERVER_URL="${SERVER_URL:-http://127.0.0.1:41999}"
 mkdir -p "$ARTIFACTS"
 
 failed=()
-timeout_proxy_pid=""
-trap 'if [ -n "$timeout_proxy_pid" ]; then kill "$timeout_proxy_pid" 2>/dev/null || true; fi' EXIT
 for flow in "${FLOWS[@]}"; do
   file="flows/$flow.yaml"
   out="$ARTIFACTS/$flow"
   mkdir -p "$out"
-  if [ "$flow" = "shell-timeout-recovery" ]; then
-    node ../../../tests/integration/mobile-e2e/timeout-proxy.mjs > "$out/timeout-proxy.log" 2>&1 &
-    timeout_proxy_pid=$!
-  fi
   echo "::group::maestro $flow"
   # shellcheck disable=SC2086
   if maestro --device "$UDID" test \
