@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type {
   BbDesktopBrowserApi,
   BbDesktopBrowserAttachRequest,
@@ -264,9 +271,7 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
       const view = render(deck(tab));
       await act(async () => {});
       expect(
-        screen.getByText(
-          "This BB Browser tab is disconnected.",
-        ),
+        screen.getByText("This BB Browser tab is disconnected."),
       ).not.toBeNull();
       expect(attachments).toEqual([]);
       view.rerender(deck({ ...tab, desktopTarget }));

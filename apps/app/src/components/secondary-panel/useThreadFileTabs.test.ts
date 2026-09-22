@@ -109,8 +109,15 @@ describe("useThreadFileTabs recently closed tabs", () => {
   it("reopens a stale browser URL with a fresh identity and preserves the original session tab", () => {
     const threadId = "browser-recovery";
     const tab = {
-      ...createBrowserFixedPanelTab({ environmentId: null, url: "https://example.com" }),
-      desktopTarget: { hostId: "host-old", instanceId: "window-old", generation: "old" },
+      ...createBrowserFixedPanelTab({
+        environmentId: null,
+        url: "https://example.com",
+      }),
+      desktopTarget: {
+        hostId: "host-old",
+        instanceId: "window-old",
+        generation: "old",
+      },
     };
     const state = createEmptyFixedPanelTabsState({
       secondary: { activeTabId: tab.id, isOpen: true, tabs: [tab] },
@@ -129,12 +136,14 @@ describe("useThreadFileTabs recently closed tabs", () => {
         terminalSessions: undefined,
       }),
     );
-    act(() => result.current.updateBrowserTab({
-      tabId: tab.id,
-      url: tab.url,
-      title: tab.title,
-      reopenOnThisDesktop: true,
-    }));
+    act(() =>
+      result.current.updateBrowserTab({
+        tabId: tab.id,
+        url: tab.url,
+        title: tab.title,
+        reopenOnThisDesktop: true,
+      }),
+    );
     expect(result.current.activeBrowserTab?.id).not.toBe(tab.id);
     expect(result.current.activeBrowserTab?.url).toBe(tab.url);
     expect(result.current.activeBrowserTab?.desktopTarget).toBeUndefined();
