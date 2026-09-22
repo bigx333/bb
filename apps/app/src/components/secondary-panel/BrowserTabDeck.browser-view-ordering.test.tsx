@@ -220,6 +220,7 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.restoreAllMocks();
     resetBrowserViewPersistence();
     window.localStorage.clear();
@@ -316,6 +317,50 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
       title: tab.title,
       reopenOnThisDesktop: true,
     });
+  });
+
+  it("rechecks a stale tab after the desktop broker connects", async () => {
+    vi.useFakeTimers();
+    const { api, attachments } = createRecordingBrowserApi();
+    api.getTarget = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({
+        hostId: "host-1",
+        instanceId: "new-window",
+        generation: "new-generation",
+      });
+    installDesktopBrowser(api);
+    const tab = {
+      ...makeBrowserTab("stale-tab", "https://example.com/saved"),
+      desktopTarget: {
+        hostId: "host-1",
+        instanceId: "old-window",
+        generation: "old-generation",
+      },
+    };
+    render(
+      <BrowserTabDeck
+        browserTabs={[tab]}
+        activeBrowserTabId={tab.id}
+        environmentId="env-1"
+        canShowNativeBrowserView
+        threadId="thread-1"
+        onUpdate={() => {}}
+      />,
+    );
+
+    await act(async () => {});
+    expect(screen.queryByRole("button", { name: "Reopen tab" })).toBeNull();
+    expect(attachments).toEqual([]);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+
+    expect(api.getTarget).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Reopen tab" })).not.toBeNull();
+    expect(attachments).toEqual([]);
   });
 
   it("attaches a URL-bearing tab hidden and shows only after attach plus compact drawer readiness", async () => {
