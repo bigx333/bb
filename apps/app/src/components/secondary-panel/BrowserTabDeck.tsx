@@ -40,6 +40,8 @@ interface BuildBrowserTabIdSetArgs {
   browserTabs: readonly BrowserFixedPanelTab[];
 }
 
+const DESKTOP_BROWSER_TARGET_RETRY_MS = 1_000;
+
 export function buildBrowserTabIdSet({
   browserTabs,
 }: BuildBrowserTabIdSetArgs): ReadonlySet<string> {
@@ -114,17 +116,36 @@ export function BrowserTabDeck({
     useState<BbDesktopBrowserTarget | null>(null);
   useEffect(() => {
     let current = true;
+    let retryTimer: number | null = null;
     setVerifiedTarget(null);
-    if (targetHostId !== undefined) {
-      void desktopBrowser
-        ?.getTarget?.()
-        .then((actual) => {
-          if (current) setVerifiedTarget(actual);
-        })
-        .catch(() => undefined);
+    const getTarget = desktopBrowser?.getTarget;
+    if (targetHostId !== undefined && getTarget !== undefined) {
+      const verifyTarget = () => {
+        void getTarget()
+          .then((actual) => {
+            if (!current) return;
+            setVerifiedTarget(actual);
+            if (actual === null) {
+              retryTimer = window.setTimeout(
+                verifyTarget,
+                DESKTOP_BROWSER_TARGET_RETRY_MS,
+              );
+            }
+          })
+          .catch(() => {
+            if (current) {
+              retryTimer = window.setTimeout(
+                verifyTarget,
+                DESKTOP_BROWSER_TARGET_RETRY_MS,
+              );
+            }
+          });
+      };
+      verifyTarget();
     }
     return () => {
       current = false;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
   }, [desktopBrowser, targetHostId, target?.instanceId, target?.generation]);
   if (activeBrowserTab === null) {
