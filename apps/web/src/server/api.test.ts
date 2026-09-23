@@ -29,6 +29,7 @@ import {
   redeemConnectCode,
   redeemMachineCode,
   resolveServerUrlTemplate,
+  renameMachineForServerCredential,
   revokeMachineForServerCredential,
   revokeMachine,
 } from "./api.js";
@@ -650,6 +651,81 @@ describe("server-authenticated machine-code round trip", () => {
     });
   });
 
+  it("renames only live machines on the server credential's account", async () => {
+    seedUser("u1");
+    seedUser("foreign");
+    await claimHandle(deps, "u1", "sawyer");
+    const serverCredential = "bbcred_rename";
+    db.update(server)
+      .set({ credentialHash: await sha256Hex(serverCredential) })
+      .run();
+    const createdAt = new Date();
+    db.insert(machine)
+      .values([
+        {
+          id: "machine-live",
+          userId: "u1",
+          name: "Old name",
+          credentialHash: "hash-live",
+          createdAt,
+        },
+        {
+          id: "machine-revoked",
+          userId: "u1",
+          name: "Revoked name",
+          credentialHash: "hash-revoked",
+          createdAt,
+          revokedAt: createdAt,
+        },
+        {
+          id: "machine-foreign",
+          userId: "foreign",
+          name: "Foreign name",
+          credentialHash: "hash-foreign",
+          createdAt,
+        },
+      ])
+      .run();
+
+    await expect(
+      renameMachineForServerCredential(
+        deps,
+        serverCredential,
+        "machine-live",
+        "New name",
+      ),
+    ).resolves.toEqual({ ok: true });
+    for (const machineId of ["machine-revoked", "machine-foreign"]) {
+      await expect(
+        renameMachineForServerCredential(
+          deps,
+          serverCredential,
+          machineId,
+          "New name",
+        ),
+      ).resolves.toEqual({ error: "not-found", status: 404 });
+    }
+    await expect(
+      renameMachineForServerCredential(
+        deps,
+        "bbcred_bogus",
+        "machine-live",
+        "Bogus name",
+      ),
+    ).resolves.toEqual({ error: "unauthorized", status: 401 });
+    expect(
+      db
+        .select({ id: machine.id, name: machine.name })
+        .from(machine)
+        .orderBy(machine.id)
+        .all(),
+    ).toEqual([
+      { id: "machine-foreign", name: "Foreign name" },
+      { id: "machine-live", name: "New name" },
+      { id: "machine-revoked", name: "Revoked name" },
+    ]);
+  });
+
   it("rejects a bogus server credential", async () => {
     seedUser("u1");
     await claimHandle(deps, "u1", "sawyer");
@@ -754,6 +830,14 @@ describe("dashboard machine recovery", () => {
           lastSeenAt: now,
           createdAt: now,
         },
+        {
+          id: "machine-ended",
+          userId: "u1",
+          credentialHash: "hash-ended",
+          sessionSeenAt: now,
+          sessionEndedAt: now,
+          createdAt: new Date(now.getTime() + 1000),
+        },
       ])
       .run();
 
@@ -762,6 +846,7 @@ describe("dashboard machine recovery", () => {
       ["machine-fresh", "fresh-machine", true],
       ["machine-stale", "stale-machine", false],
       ["machine-unlabeled", null, false],
+      ["machine-ended", null, false],
     ]);
   });
 

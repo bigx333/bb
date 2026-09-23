@@ -26,7 +26,6 @@ import {
 import { serveWithCache } from "./cache.js";
 import { BB_ICON_DATA_URI } from "./bb-icon.js";
 import { handleAssignMachineLabel } from "./machine-label.js";
-import { handleMachineSessionPresence } from "./machine-session.js";
 import {
   publicConnectOrigin,
   resolveConnectRequestHost,
@@ -264,9 +263,6 @@ export default {
     }
     if (url.pathname === "/api/connect/machine-label") {
       return handleAssignMachineLabel(request, env);
-    }
-    if (url.pathname === "/api/connect/machine-session") {
-      return handleMachineSessionPresence(request, env);
     }
     const host = resolveConnectRequestHost(request.headers, runtime);
     const parsed = parseVisitorHost(host, env.BASE_DOMAIN);

@@ -20,9 +20,6 @@ import type { HostDaemonLogger } from "../logger.js";
 
 type ConnectTunnelState = "connected" | "reconnecting" | "offline";
 
-const SESSION_PRESENCE_INTERVAL_MS = 30_000;
-const SESSION_PRESENCE_TIMEOUT_MS = 10_000;
-
 export interface ConnectTunnelStatus {
   state: ConnectTunnelState;
   lastError: string | null;
@@ -118,8 +115,6 @@ export class ConnectTunnelClient {
   private ports = new Set<number>();
   private identity: HostDaemonConnectTunnelIdentity | undefined;
   private identityPromise: Promise<HostDaemonConnectTunnelIdentity> | undefined;
-  private sessionPresencePromise: Promise<void> | undefined;
-  private lastSessionPresenceAttemptAt: number | null = null;
   private connectAttempt: Promise<void> | undefined;
   private connectionEpoch = 0;
   private socket: NodeWebSocket | undefined;
@@ -151,61 +146,6 @@ export class ConnectTunnelClient {
       generation: Math.max(this.generation, 0),
       ports: [...this.ports].sort((a, b) => a - b),
     };
-  }
-
-  async reportSessionPresence(): Promise<void> {
-    const credential = this.machineCredential;
-    if (!credential) return Promise.resolve();
-    if (this.sessionPresencePromise) return this.sessionPresencePromise;
-    if (
-      this.lastSessionPresenceAttemptAt !== null &&
-      Date.now() - this.lastSessionPresenceAttemptAt <
-        SESSION_PRESENCE_INTERVAL_MS
-    ) {
-      return Promise.resolve();
-    }
-
-    const gate = resolveTrustedConnectGate(this.options.serverUrl);
-    const url = new URL("/api/connect/machine-session", gate.apiOrigin);
-    this.lastSessionPresenceAttemptAt = Date.now();
-    const controller = new AbortController();
-    let timeoutId: ReturnType<typeof setTimeout>;
-    const timeout = new Promise<never>((_resolve, reject) => {
-      timeoutId = setTimeout(() => {
-        controller.abort();
-        reject(new Error("machine session presence timed out"));
-      }, SESSION_PRESENCE_TIMEOUT_MS);
-    });
-    let pending: Promise<void>;
-    pending = Promise.race([
-      Promise.resolve().then(() =>
-        this.fetchFn(url, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-bb-connect-machine": credential,
-          },
-          body: JSON.stringify({ name: this.options.hostName.slice(0, 120) }),
-          signal: controller.signal,
-        }),
-      ),
-      timeout,
-    ])
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(
-            `machine session presence failed: HTTP ${response.status}`,
-          );
-        }
-      })
-      .finally(() => {
-        clearTimeout(timeoutId);
-        if (this.sessionPresencePromise === pending) {
-          this.sessionPresencePromise = undefined;
-        }
-      });
-    this.sessionPresencePromise = pending;
-    return pending;
   }
 
   replaceShareSet(shares: HostDaemonConnectShares): boolean {
@@ -258,7 +198,9 @@ export class ConnectTunnelClient {
         "content-type": "application/json",
         "x-bb-connect-machine": credential,
       },
-      body: JSON.stringify({ desiredName: this.options.hostName.slice(0, 120) }),
+      body: JSON.stringify({
+        desiredName: this.options.hostName.slice(0, 120),
+      }),
     })
       .then(async (response) => {
         if (response.status === 401 || response.status === 403) {

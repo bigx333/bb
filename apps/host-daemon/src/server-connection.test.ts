@@ -32,7 +32,6 @@ interface ConnectionFixtureArgs extends CreateServerClientFixtureArgs {
   onMachineEnvironment?: (
     environment: HostDaemonSessionOpenResponse["machineEnvironment"],
   ) => void;
-  onHeartbeatAcknowledged?: () => void;
   startupTimeoutMs?: number;
 }
 
@@ -190,7 +189,6 @@ function createConnectionFixture(args: ConnectionFixtureArgs = {}) {
     onMachineShutdown: args.onMachineShutdown,
     onServerMoved: args.onServerMoved,
     onMachineEnvironment: args.onMachineEnvironment,
-    onHeartbeatAcknowledged: args.onHeartbeatAcknowledged,
     startupTimeoutMs: args.startupTimeoutMs,
     setSession,
     createWebSocket: webSocket.createWebSocket,
@@ -568,11 +566,9 @@ describe("ServerConnection", () => {
   it("reconnects when server heartbeat acknowledgements stop", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
-    const onHeartbeatAcknowledged = vi.fn();
     const { connection, logger, webSocket } = createConnectionFixture({
       heartbeatIntervalMs: 5_000,
       leaseTimeoutMs: 30_000,
-      onHeartbeatAcknowledged,
     });
     try {
       await connection.start();
@@ -583,7 +579,6 @@ describe("ServerConnection", () => {
 
       await vi.advanceTimersByTimeAsync(25_000);
       socket.onmessage?.({ data: JSON.stringify({ type: "heartbeat-ack" }) });
-      expect(onHeartbeatAcknowledged).toHaveBeenCalledOnce();
       await vi.advanceTimersByTimeAsync(30_000);
       expect(socket.reconnect).not.toHaveBeenCalled();
 

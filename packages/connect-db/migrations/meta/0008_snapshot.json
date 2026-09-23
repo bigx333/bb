@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e2bc4920-fac3-46b3-9c12-db351eceaefb",
+  "id": "faa660ab-9c74-44c4-ac2a-90a21c6cba04",
   "prevId": "acb9bcef-5e71-4090-9e80-0e89ebb9b844",
   "tables": {
     "account": {
@@ -675,6 +675,13 @@
         },
         "session_seen_at": {
           "name": "session_seen_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "session_ended_at": {
+          "name": "session_ended_at",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,

@@ -11,7 +11,10 @@ import {
   type HeaderPair,
 } from "@bb/tunnel-contract";
 import { relayedResponse } from "./response-encoding.js";
-import { TUNNEL_TARGET_HEADER } from "./protocol-headers.js";
+import {
+  GATE_MACHINE_ID_HEADER,
+  TUNNEL_TARGET_HEADER,
+} from "./protocol-headers.js";
 
 export interface Env {
   TUNNEL_DO: DurableObjectNamespace;
@@ -69,6 +72,15 @@ export function parseClientProtocolVersion(raw: string | null): number {
 
 const PORT_SHARE_TOO_OLD =
   "this bb's connect plugin is too old for port sharing — update bb and reconnect";
+
+interface VisitorAttachment {
+  streamId: number;
+  machineSession?: { machineId: string; confirmed: boolean };
+}
+
+function readVisitorAttachment(ws: WebSocket): VisitorAttachment | null {
+  return ws.deserializeAttachment() as VisitorAttachment | null;
+}
 
 interface PendingHttp {
   resolve: (response: Response) => void;
@@ -241,6 +253,14 @@ export class TunnelDO {
       return;
     }
     await this.markPresence();
+    const machineIds = new Set(
+      this.confirmedMachineSessions().map((session) => session.machineId),
+    );
+    await Promise.all(
+      [...machineIds].map((machineId) =>
+        this.recordMachineSession(machineId, "open"),
+      ),
+    );
     await this.state.storage.setAlarm(Date.now() + PRESENCE_INTERVAL_MS);
   }
 
@@ -306,8 +326,13 @@ export class TunnelDO {
     );
     if (!opened) return this.offlineResponse();
 
+    const machineId = request.headers.get(GATE_MACHINE_ID_HEADER);
+    const attachment: VisitorAttachment =
+      machineId === null
+        ? { streamId }
+        : { streamId, machineSession: { machineId, confirmed: false } };
     const pair = new WebSocketPair();
-    pair[1].serializeAttachment({ streamId });
+    pair[1].serializeAttachment(attachment);
     this.state.acceptWebSocket(pair[1], [`visitor:${streamId}`]);
 
     const responseHeaders = new Headers();
@@ -415,9 +440,7 @@ export class TunnelDO {
     }
     for (const visitor of this.state.getWebSockets()) {
       if (!this.state.getTags(visitor).includes(TUNNEL_TAG)) {
-        try {
-          visitor.close(1001, wsReason);
-        } catch {}
+        this.closeVisitor(visitor, 1001, wsReason);
       }
     }
   }
@@ -473,7 +496,7 @@ export class TunnelDO {
     const attachment = ws.deserializeAttachment() as { streamId: number };
     const tunnel = this.tunnelSocket();
     if (!tunnel) {
-      ws.close(1011, "tunnel disconnected");
+      this.closeVisitor(ws, 1011, "tunnel disconnected");
       return;
     }
     const isBinary = typeof message !== "string";
@@ -488,7 +511,7 @@ export class TunnelDO {
           : new TextEncoder().encode(message),
       }),
     );
-    if (!sent) ws.close(1011, "tunnel disconnected");
+    if (!sent) this.closeVisitor(ws, 1011, "tunnel disconnected");
   }
 
   private onTunnelFrame(frame: Frame): void {
@@ -564,12 +587,10 @@ export class TunnelDO {
             `tunnel client aborted: ${frame.reason}`,
           );
         } else {
-          try {
-            this.visitorSocket(frame.streamId)?.close(
-              safeCloseCode(frame.code),
-              frame.reason,
-            );
-          } catch {}
+          const visitor = this.visitorSocket(frame.streamId);
+          if (visitor) {
+            this.closeVisitor(visitor, safeCloseCode(frame.code), frame.reason);
+          }
         }
         return;
       }
@@ -583,8 +604,21 @@ export class TunnelDO {
         } catch {}
         return;
       }
-      case "ws-open-ack":
+      case "ws-open-ack": {
+        const visitor = this.visitorSocket(frame.streamId);
+        if (!visitor) return;
+        const attachment = readVisitorAttachment(visitor);
+        if (!attachment?.machineSession) return;
+        visitor.serializeAttachment({
+          ...attachment,
+          machineSession: { ...attachment.machineSession, confirmed: true },
+        });
+        void this.recordMachineSession(
+          attachment.machineSession.machineId,
+          "open",
+        );
         return;
+      }
       case "open-http":
       case "open-ws":
         return;
@@ -593,6 +627,59 @@ export class TunnelDO {
 
   private visitorSocket(streamId: number): WebSocket | null {
     return this.state.getWebSockets(`visitor:${streamId}`)[0] ?? null;
+  }
+
+  private closeVisitor(visitor: WebSocket, code: number, reason: string): void {
+    try {
+      visitor.close(code, reason);
+    } catch {}
+    const attachment = readVisitorAttachment(visitor);
+    const session = attachment?.machineSession;
+    if (!attachment || !session?.confirmed) return;
+    const stillConnected = this.confirmedMachineSessions().some(
+      (other) =>
+        other.machineId === session.machineId &&
+        other.streamId !== attachment.streamId,
+    );
+    if (!stillConnected) {
+      void this.recordMachineSession(session.machineId, "ended");
+    }
+  }
+
+  private confirmedMachineSessions(): Array<{
+    machineId: string;
+    streamId: number;
+  }> {
+    const sessions: Array<{ machineId: string; streamId: number }> = [];
+    for (const ws of this.state.getWebSockets()) {
+      if (ws.readyState !== WS_READY_STATE_OPEN) continue;
+      if (this.state.getTags(ws).includes(TUNNEL_TAG)) continue;
+      const attachment = readVisitorAttachment(ws);
+      if (attachment?.machineSession?.confirmed) {
+        sessions.push({
+          machineId: attachment.machineSession.machineId,
+          streamId: attachment.streamId,
+        });
+      }
+    }
+    return sessions;
+  }
+
+  private async recordMachineSession(
+    machineId: string,
+    state: "open" | "ended",
+  ): Promise<void> {
+    const now = new Date();
+    try {
+      await drizzle(this.env.DB)
+        .update(machine)
+        .set({
+          sessionSeenAt: now,
+          sessionEndedAt: state === "ended" ? now : null,
+        })
+        .where(and(eq(machine.id, machineId), isNull(machine.revokedAt)))
+        .run();
+    } catch {}
   }
 
   webSocketClose(ws: WebSocket, code: number, reason: string): void {
@@ -619,9 +706,7 @@ export class TunnelDO {
         }),
       );
     }
-    try {
-      ws.close(safeCloseCode(code), reason);
-    } catch {}
+    this.closeVisitor(ws, safeCloseCode(code), reason);
   }
 
   webSocketError(ws: WebSocket): void {

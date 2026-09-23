@@ -23,7 +23,6 @@ import {
 import {
   MACHINE_LAST_SEEN_WRITE_INTERVAL_MS,
   markMachineSeen,
-  markMachineSessionSeen,
   resolveLabel,
   verifyMachineCredentialDetails,
   verifySessionCookie,
@@ -649,7 +648,7 @@ describe("single-flight gate caches", () => {
 });
 
 describe("machine credential presence", () => {
-  it("throttles credential activity separately from session presence", async () => {
+  it("verifies the owning machine and throttles lastSeenAt writes", async () => {
     seedUser("acct-machine");
     const credential = `bbcm_${crypto.randomUUID()}`;
     const credentialHash = await sha256Hex(credential);
@@ -669,20 +668,14 @@ describe("machine credential presence", () => {
       userId: "acct-machine",
     });
     expect(await markMachineSeen("machine-presence", db, 10_000)).toBe(true);
-    const seen = () =>
-      db.select().from(machine).where(eq(machine.id, "machine-presence")).get();
-    expect(seen()?.lastSeenAt?.getTime()).toBe(10_000);
-    expect(seen()?.sessionSeenAt).toBeNull();
-
     expect(
-      await markMachineSessionSeen("wrong credential", "Wrong", db, 20_000),
-    ).toBe(false);
-    expect(await markMachineSessionSeen(credential, "M4-A", db, 20_000)).toBe(
-      true,
-    );
-    expect(seen()).toMatchObject({ name: "M4-A" });
-    expect(seen()?.sessionSeenAt?.getTime()).toBe(20_000);
-    expect(seen()?.lastSeenAt?.getTime()).toBe(10_000);
+      db
+        .select()
+        .from(machine)
+        .where(eq(machine.id, "machine-presence"))
+        .get()
+        ?.lastSeenAt?.getTime(),
+    ).toBe(10_000);
 
     expect(
       await markMachineSeen(

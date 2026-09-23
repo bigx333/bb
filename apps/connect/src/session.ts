@@ -311,22 +311,6 @@ export async function markMachineSeen(
   return true;
 }
 
-export async function markMachineSessionSeen(
-  credential: string,
-  name: string,
-  db: ConnectDb,
-  now: number = Date.now(),
-): Promise<boolean> {
-  const verified = await verifyMachineCredentialDetails(credential, db);
-  if (!verified) return false;
-  await db
-    .update(machine)
-    .set({ name, sessionSeenAt: new Date(now) })
-    .where(and(eq(machine.id, verified.machineId), isNull(machine.revokedAt)))
-    .run();
-  return true;
-}
-
 export function parseCookie(
   header: string | null,
   name: string,

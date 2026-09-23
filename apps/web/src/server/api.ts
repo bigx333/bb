@@ -165,7 +165,8 @@ type ConnectApiResult =
   | Awaited<ReturnType<typeof redeemConnectCode>>
   | Awaited<ReturnType<typeof redeemMachineCode>>
   | Awaited<ReturnType<typeof createMachineCodeForServerCredential>>
-  | Awaited<ReturnType<typeof revokeMachineForServerCredential>>;
+  | Awaited<ReturnType<typeof revokeMachineForServerCredential>>
+  | Awaited<ReturnType<typeof renameMachineForServerCredential>>;
 
 export function connectApiResponse(result: ConnectApiResult): Response {
   return "status" in result
@@ -291,6 +292,7 @@ export async function getAccountState(
       subdomain: machine.subdomain,
       lastSeenAt: machine.lastSeenAt,
       sessionSeenAt: machine.sessionSeenAt,
+      sessionEndedAt: machine.sessionEndedAt,
       createdAt: machine.createdAt,
     })
     .from(machine)
@@ -305,6 +307,7 @@ export async function getAccountState(
         name: row.name,
         subdomain: row.subdomain,
         online:
+          row.sessionEndedAt === null &&
           sessionSeenMs != null &&
           now - sessionSeenMs < SERVER_OFFLINE_AFTER_MS,
         lastSeenAt: lastSeenMs,
@@ -639,6 +642,30 @@ export async function revokeMachineForServerCredential(
         status: result.error === "tunnel-close-failed" ? 503 : 404,
       }
     : result;
+}
+
+export async function renameMachineForServerCredential(
+  deps: Pick<Deps, "db">,
+  credential: string,
+  machineId: string,
+  name: string,
+): Promise<{ ok: true } | { error: string; status: number }> {
+  const srv = await findServerByCredential(deps.db, credential);
+  if (!srv) return { error: "unauthorized", status: 401 };
+  const renamed = await deps.db
+    .update(machine)
+    .set({ name })
+    .where(
+      and(
+        eq(machine.id, machineId),
+        eq(machine.userId, srv.userId),
+        isNull(machine.revokedAt),
+      ),
+    )
+    .run();
+  return rowsChanged(renamed) > 0
+    ? { ok: true }
+    : { error: "not-found", status: 404 };
 }
 
 export async function disconnectServer(

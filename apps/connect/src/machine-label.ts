@@ -93,7 +93,13 @@ export async function assignMachineLabel(
     await db
       .update(machine)
       .set({ name })
-      .where(and(eq(machine.id, machineId), isNull(machine.revokedAt)))
+      .where(
+        and(
+          eq(machine.id, machineId),
+          isNull(machine.revokedAt),
+          isNull(machine.name),
+        ),
+      )
       .run();
   }
   if (row.subdomain !== null) return row.subdomain;

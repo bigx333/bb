@@ -415,7 +415,7 @@ describe("machine label assignment", () => {
         .from(machine)
         .where(eq(machine.id, "machine-new"))
         .get()?.name,
-    ).toBe("a totally different name");
+    ).toBe("Sawyer Air!!!");
   });
 
   it("uses machine-<id-prefix> when the desired name is empty or invalid", async () => {

@@ -156,6 +156,7 @@ export const machine = sqliteTable(
     credentialHash: text("credential_hash").notNull(),
     lastSeenAt: timestampMs("last_seen_at"),
     sessionSeenAt: timestampMs("session_seen_at"),
+    sessionEndedAt: timestampMs("session_ended_at"),
     createdAt: timestampMs("created_at").notNull(),
     revokedAt: timestampMs("revoked_at"),
   },
