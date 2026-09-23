@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "830d7d6d-ed8a-4415-a2c8-9f33786bc120",
+  "id": "e2bc4920-fac3-46b3-9c12-db351eceaefb",
   "prevId": "acb9bcef-5e71-4090-9e80-0e89ebb9b844",
   "tables": {
     "account": {
@@ -654,13 +654,6 @@
         },
         "subdomain": {
           "name": "subdomain",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "server_id": {
-          "name": "server_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
