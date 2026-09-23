@@ -30,6 +30,7 @@ import {
   experimental_useSidebarThreadActions,
   experimental_useSidebarThreadSplit,
   ThreadTitle,
+  useBbNavigate,
   useSidebarSplitLayout,
   useSidebarThreadDraft,
   useSidebarThreadRowStatus,
@@ -305,6 +306,7 @@ function ThreadRowComponent({
   onProjectSelect,
   options,
 }: ThreadRowProps) {
+  const navigate = useBbNavigate();
   const [isDropdownActionsOpen, setIsDropdownActionsOpen] = useState(false);
   const [isContextActionsOpen, setIsContextActionsOpen] = useState(false);
   const actions = experimental_useSidebarThreadActions();
@@ -540,6 +542,8 @@ function ThreadRowComponent({
               startEditing();
               return;
             }
+            event.preventDefault();
+            navigate.toThread(thread.id);
             onProjectSelect?.();
           }}
           onDoubleClick={isEditing ? undefined : startTitleEditing}

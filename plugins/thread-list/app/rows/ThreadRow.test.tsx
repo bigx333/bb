@@ -200,15 +200,22 @@ afterEach(() => {
 });
 
 describe("ThreadRow", () => {
-  it("links the row to the thread href and leaves a plain click to the host", () => {
-    const slot = renderThreadRow({ thread: createThread({ href: "/projects/proj_test/threads/thr_test" }) });
+  it("keeps the canonical href and routes a plain click through host navigation", () => {
+    const slot = renderThreadRow({
+      thread: createThread({
+        href: "/projects/proj_test/threads/thr_test",
+      }),
+    });
     const link = screen.getByRole("link", { name: "Open Thread" });
     expect(link.getAttribute("href")).toBe("/projects/proj_test/threads/thr_test");
     expect(link.getAttribute("data-sidebar-thread-shortcut-target")).toBe("");
     expect(link.getAttribute("data-sidebar-thread-id")).toBe("thr_test");
     expect(link.getAttribute("data-sidebar-rename-anchor")).toBe("");
     expect(link.closest("[data-sidebar-rename-row]")).not.toBeNull();
-    fireEvent.click(link);
+    expect(fireEvent.click(link)).toBe(false);
+    expect(slot.inspection.navigateCalls).toEqual([
+      { method: "toThread", threadId: "thr_test" },
+    ]);
     expect(slot.inspection.sidebarActionCalls).toEqual([]);
   });
 
@@ -223,6 +230,7 @@ describe("ThreadRow", () => {
     expect(slot.inspection.sidebarActionCalls).toEqual([
       { method: "open", threadId: "thr_test", options: { split: true } },
     ]);
+    expect(slot.inspection.navigateCalls).toEqual([]);
   });
 
   it("keeps desktop restore available, hides it on mobile, and blocks row event propagation", async () => {
