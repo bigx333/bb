@@ -160,11 +160,25 @@ jobs:
   # Every other suite mocks the Agent SDK, so an upstream CLI release that
   # breaks the model probe passes CI silently. This runs it against a real,
   # unpinned CLI.
-  # TODO: cover the npm build, macOS, and the full `test:integration` suite.
+  # TODO: cover the npm build and the full `test:integration` suite.
   provider-model-listing:
-    name: Provider Model Listing
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    name: Provider Model Listing (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+
+    # macOS is not redundant with Linux here: the two platforms' native builds
+    # disagree. #4126 shipped a probe that failed on macOS while Linux stayed
+    # green, so Linux alone cannot gate this.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            os: blacksmith-4vcpu-ubuntu-2404
+            turbo-cache: "true"
+          - platform: macos
+            os: blacksmith-6vcpu-macos-15
+            turbo-cache: "false"
 
     # Fork pull requests cannot read secrets, so the probe would fail
     # unauthenticated for reasons unrelated to bb.
@@ -179,7 +193,8 @@ jobs:
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           pnpm-version: ${{ env.PNPM_VERSION }}
-          cache-prefix: test-provider-model-listing
+          cache-prefix: test-provider-model-listing-${{ matrix.platform }}
+          turbo-cache: ${{ matrix.turbo-cache }}
 
       # The native build: bb resolves `claude` from PATH and `~/.local/bin`,
       # so this is the binary most users run.
@@ -190,6 +205,15 @@ jobs:
 
       - name: Show Claude Code version
         run: claude --version
+
+      # The probe reads the `user` settings source, and the macOS build exits
+      # silently when that file is missing. Runners start without one, so seed
+      # it: a real user machine always has it, and without it macOS fails for
+      # a reason no user would hit.
+      - name: Seed Claude Code user settings
+        run: |
+          mkdir -p "$HOME/.claude"
+          echo '{"includeCoAuthoredBy": false}' > "$HOME/.claude/settings.json"
 
       # Fails here, where the cause is obvious, rather than inside the probe.
       - name: Check Claude Code credential
