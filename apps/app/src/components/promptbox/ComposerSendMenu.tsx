@@ -122,7 +122,7 @@ export function ComposerSendMenu({
             disabled={!canSubmit}
             aria-hidden={hasInput ? undefined : true}
             className={cn(
-              "min-w-0 overflow-hidden rounded-l-none px-0 transition-[width] duration-150 ease-out motion-reduce:transition-none",
+              "min-w-0 overflow-hidden rounded-l-none px-0 transition-[width] duration-150 ease-out [&_[data-icon-root]_*]:stroke-2 motion-reduce:transition-none",
               hasInput ? "w-6" : "w-0",
             )}
           >
