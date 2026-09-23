@@ -73,6 +73,32 @@ describe("installConnectDesktopSession", () => {
     });
   });
 
+  it("installs the same parent-domain cookie in the in-app Browser store", async () => {
+    const cookieStore = createCookieStore();
+    const browserCookieStore = createCookieStore();
+    const browserSet = vi.spyOn(browserCookieStore, "set");
+
+    await expect(
+      installConnectDesktopSession({
+        cookieStore,
+        additionalCookieStores: [browserCookieStore],
+        mintCookie: successfulSource(),
+        remoteServerUrl: "https://laptop.getbb.app",
+      } as Parameters<typeof installConnectDesktopSession>[0]),
+    ).resolves.toEqual({ expiresAt: 1_800_000, ok: true });
+    expect(browserSet).toHaveBeenCalledWith({
+      domain: ".getbb.app",
+      expirationDate: 1800,
+      httpOnly: true,
+      name: "__Secure-bb-connect.desktop_session",
+      path: "/",
+      sameSite: "lax",
+      secure: true,
+      url: "https://laptop.getbb.app",
+      value: "signed-session",
+    });
+  });
+
   it("passes a mint failure through untouched", async () => {
     await expect(
       installConnectDesktopSession({
