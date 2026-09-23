@@ -1115,9 +1115,17 @@ async function authenticateConnectTarget(
   isCurrent: () => boolean,
 ): Promise<ConnectDesktopSessionResult> {
   const cookieStore = session.defaultSession.cookies;
+  const additionalCookieStores =
+    desktopBrowserViewManager === null
+      ? []
+      : [
+          desktopBrowserViewManager.profileSession({ kind: "personal" })
+            .cookies,
+        ];
   let cachedFailure: ConnectDesktopSessionResult | null = null;
   if (cachedConnectCredential !== null) {
     const cachedResult = await installConnectDesktopSession({
+      additionalCookieStores,
       cookieStore,
       mintCookie: createCredentialCookieSource({
         credential: cachedConnectCredential,
@@ -1150,6 +1158,7 @@ async function authenticateConnectTarget(
   const movedCredential = await readLocalServerMoveCredential(remoteServerUrl);
   if (movedCredential !== null) {
     return installConnectDesktopSession({
+      additionalCookieStores,
       cookieStore,
       mintCookie: createCredentialCookieSource({
         credential: movedCredential,
@@ -1169,6 +1178,7 @@ async function authenticateConnectTarget(
     );
   }
   const localResult = await installConnectDesktopSession({
+    additionalCookieStores,
     cookieStore,
     mintCookie: createLocalServerCookieSource({
       localServerUrl: currentRuntime.serverUrl,

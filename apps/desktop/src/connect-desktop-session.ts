@@ -140,6 +140,7 @@ export function createCredentialCookieSource(args: {
 }
 
 export async function installConnectDesktopSession(args: {
+  additionalCookieStores?: readonly DesktopCookieStore[];
   cookieStore: DesktopCookieStore;
   mintCookie: DesktopSessionCookieSource;
   remoteServerUrl: string;
@@ -151,40 +152,46 @@ export async function installConnectDesktopSession(args: {
 
   const { cookie } = minted;
   const remoteOrigin = new URL(args.remoteServerUrl).origin;
-  try {
-    await args.cookieStore.set({
-      domain: cookie.domain,
-      expirationDate: cookie.expiresAt / 1000,
-      httpOnly: true,
-      name: cookie.name,
-      path: "/",
-      sameSite: "lax",
-      secure: remoteOrigin.startsWith("https://"),
-      url: remoteOrigin,
-      value: cookie.value,
-    });
-  } catch (error) {
-    return failure("cookie_install_failed", errorMessage(error));
-  }
+  const cookieStores = [
+    args.cookieStore,
+    ...(args.additionalCookieStores ?? []),
+  ];
+  for (const cookieStore of cookieStores) {
+    try {
+      await cookieStore.set({
+        domain: cookie.domain,
+        expirationDate: cookie.expiresAt / 1000,
+        httpOnly: true,
+        name: cookie.name,
+        path: "/",
+        sameSite: "lax",
+        secure: remoteOrigin.startsWith("https://"),
+        url: remoteOrigin,
+        value: cookie.value,
+      });
+    } catch (error) {
+      return failure("cookie_install_failed", errorMessage(error));
+    }
 
-  let installedCookies: DesktopCookie[];
-  try {
-    installedCookies = await args.cookieStore.get({
-      name: cookie.name,
-      url: remoteOrigin,
-    });
-  } catch (error) {
-    return failure("cookie_verification_failed", errorMessage(error));
-  }
-  const installed = installedCookies.some(
-    (candidate) =>
-      candidate.name === cookie.name && candidate.value === cookie.value,
-  );
-  if (!installed) {
-    return failure(
-      "cookie_verification_failed",
-      "Electron did not retain the desktop session cookie",
+    let installedCookies: DesktopCookie[];
+    try {
+      installedCookies = await cookieStore.get({
+        name: cookie.name,
+        url: remoteOrigin,
+      });
+    } catch (error) {
+      return failure("cookie_verification_failed", errorMessage(error));
+    }
+    const installed = installedCookies.some(
+      (candidate) =>
+        candidate.name === cookie.name && candidate.value === cookie.value,
     );
+    if (!installed) {
+      return failure(
+        "cookie_verification_failed",
+        "Electron did not retain the desktop session cookie",
+      );
+    }
   }
   return { expiresAt: cookie.expiresAt, ok: true };
 }

@@ -84,7 +84,7 @@ describe("installConnectDesktopSession", () => {
         additionalCookieStores: [browserCookieStore],
         mintCookie: successfulSource(),
         remoteServerUrl: "https://laptop.getbb.app",
-      } as Parameters<typeof installConnectDesktopSession>[0]),
+      }),
     ).resolves.toEqual({ expiresAt: 1_800_000, ok: true });
     expect(browserSet).toHaveBeenCalledWith({
       domain: ".getbb.app",
