@@ -369,8 +369,14 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
   });
 
   it("attaches a URL-bearing tab hidden and shows only after attach plus compact drawer readiness", async () => {
-    const { api, calls, attachments, bounds, visibility } =
-      createRecordingBrowserApi();
+    const {
+      api,
+      calls,
+      attachments,
+      bounds,
+      visibility,
+      visibilityWithoutFocus,
+    } = createRecordingBrowserApi();
     installDesktopBrowser(api);
 
     const view = renderBrowserDeck({ canShowNativeBrowserView: false });
@@ -401,7 +407,10 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
     );
 
     await waitFor(() => {
-      expect(visibility.some((request) => request.visible)).toBe(true);
+      expect(visibilityWithoutFocus.some((request) => request.visible)).toBe(
+        true,
+      );
+      expect(visibility.some((request) => request.visible)).toBe(false);
     });
 
     const attachIndex = callIndex(calls, (call) => call.type === "attach");
@@ -412,7 +421,7 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
     const showIndex = callIndex(
       calls,
       (call) =>
-        call.type === "setVisible" &&
+        call.type === "setVisibleWithoutFocus" &&
         call.request.tabId === "tab-url" &&
         call.request.visible,
     );
@@ -425,7 +434,10 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
       tabId: "tab-url",
       bounds: { x: 12, y: 24, width: 420, height: 260 },
     });
-    expect(visibility.at(-1)).toEqual({ tabId: "tab-url", visible: true });
+    expect(visibilityWithoutFocus.at(-1)).toEqual({
+      tabId: "tab-url",
+      visible: true,
+    });
 
     view.rerender(
       <BrowserTabDeck
@@ -462,7 +474,9 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
       />,
     );
     await waitFor(() => {
-      const visibleShows = visibility.filter((request) => request.visible);
+      const visibleShows = visibilityWithoutFocus.filter(
+        (request) => request.visible,
+      );
       expect(visibleShows).toHaveLength(2);
     });
     const restoredBoundsIndex = lastCallIndex(
@@ -472,7 +486,7 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
     const restoredShowIndex = lastCallIndex(
       calls,
       (call) =>
-        call.type === "setVisible" &&
+        call.type === "setVisibleWithoutFocus" &&
         call.request.tabId === "tab-url" &&
         call.request.visible,
     );
@@ -554,7 +568,8 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
   });
 
   it("shows a neutral page state and hides the native view after a main-frame load error", async () => {
-    const { api, emitState, visibility } = createRecordingBrowserApi();
+    const { api, emitState, visibility, visibilityWithoutFocus } =
+      createRecordingBrowserApi();
     installDesktopBrowser(api);
 
     renderBrowserDeck({
@@ -563,7 +578,9 @@ describe("BrowserTabDeck native browser first-show ordering", () => {
     });
 
     await waitFor(() => {
-      expect(visibility.some((request) => request.visible)).toBe(true);
+      expect(visibilityWithoutFocus.some((request) => request.visible)).toBe(
+        true,
+      );
     });
 
     act(() => {
