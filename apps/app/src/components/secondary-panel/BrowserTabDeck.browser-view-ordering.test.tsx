@@ -23,7 +23,10 @@ import {
 } from "@/test/bb-desktop-test-utils";
 import { POINTER_COARSE_QUERY } from "@bb/shared-ui/hooks/use-pointer-coarse";
 import { BrowserTabDeck, BrowserTabLifecycleObserver } from "./BrowserTabDeck";
-import { resetBrowserViewPersistence } from "./browserViewVisibilityCoordinator";
+import {
+  registerBrowserView,
+  resetBrowserViewPersistence,
+} from "./browserViewVisibilityCoordinator";
 
 type BrowserCall =
   | { type: "attach"; request: BbDesktopBrowserAttachRequest }
@@ -206,6 +209,32 @@ describe("BrowserTabLifecycleObserver", () => {
     expect(
       visibility.filter((request) => request.tabId === "tab-closed"),
     ).toEqual([{ tabId: "tab-closed", visible: false }]);
+  });
+
+  it("hides retained browser views when ownership moves to another thread", async () => {
+    const { api, detachments, visibility } = createRecordingBrowserApi();
+    installDesktopBrowser(api);
+    const tab = makeBrowserTab("tab-retained", "https://example.com");
+    registerBrowserView({
+      environmentId: tab.environmentId,
+      tabId: tab.id,
+      threadId: "thread-1",
+    });
+    const view = render(
+      <BrowserTabLifecycleObserver browserTabs={[tab]} threadId="thread-1" />,
+    );
+
+    view.rerender(
+      <BrowserTabLifecycleObserver browserTabs={[]} threadId="thread-2" />,
+    );
+
+    await waitFor(() =>
+      expect(visibility).toContainEqual({
+        tabId: "tab-retained",
+        visible: false,
+      }),
+    );
+    expect(detachments).toEqual([]);
   });
 });
 
