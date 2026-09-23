@@ -198,9 +198,7 @@ export class ConnectTunnelClient {
         "content-type": "application/json",
         "x-bb-connect-machine": credential,
       },
-      body: JSON.stringify({
-        desiredName: this.options.hostName.slice(0, 120),
-      }),
+      body: JSON.stringify({ desiredName: this.options.hostName }),
     })
       .then(async (response) => {
         if (response.status === 401 || response.status === 403) {

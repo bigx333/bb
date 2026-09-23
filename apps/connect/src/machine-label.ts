@@ -166,8 +166,7 @@ export async function handleAssignMachineLabel(
     typeof body !== "object" ||
     body === null ||
     !("desiredName" in body) ||
-    typeof body.desiredName !== "string" ||
-    body.desiredName.length > 120
+    typeof body.desiredName !== "string"
   ) {
     return jsonError("invalid_request", 400);
   }

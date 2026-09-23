@@ -15,6 +15,7 @@ import {
   session,
   sha256Hex,
   user,
+  validateLabel,
 } from "@bb/connect-db";
 
 import {
@@ -28,7 +29,6 @@ import {
 import {
   assignMachineLabel,
   assignMachineLabelForCredential,
-  handleAssignMachineLabel,
   sanitizeMachineLabelBase,
 } from "./machine-label.js";
 import { SECURE_SESSION_COOKIE } from "./cloud-dev.js";
@@ -437,17 +437,7 @@ describe("machine label assignment", () => {
     ).resolves.toBe("machine-abc12345");
   });
 
-  it("rejects oversized machine names and bounds names stored by assignment", async () => {
-    const oversizedName = "a".repeat(121);
-    const response = await handleAssignMachineLabel(
-      new Request("https://owner.getbb.app/api/connect/machine-label", {
-        method: "POST",
-        body: JSON.stringify({ desiredName: oversizedName }),
-      }),
-      { DB: {} } as Parameters<typeof handleAssignMachineLabel>[1],
-    );
-    expect(response.status).toBe(400);
-
+  it("assigns a label for an oversized host name and stores the name cut to 120 characters", async () => {
     seedUser("acct-a");
     db.insert(machine)
       .values({
@@ -457,7 +447,13 @@ describe("machine label assignment", () => {
         createdAt: now,
       })
       .run();
-    await assignMachineLabel(db, "machine-long-name", oversizedName);
+    const label = await assignMachineLabel(
+      db,
+      "machine-long-name",
+      "a".repeat(300),
+    );
+    expect(label).not.toBeNull();
+    expect(validateLabel(label ?? "")).toBeNull();
     expect(
       db
         .select({ name: machine.name })
