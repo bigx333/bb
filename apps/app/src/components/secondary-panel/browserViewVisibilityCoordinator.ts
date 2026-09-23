@@ -32,6 +32,11 @@ interface DestroyPersistedBrowserViewsForThreadArgs {
   threadId: string;
 }
 
+interface HidePersistedBrowserViewsForThreadArgs {
+  desktopBrowser: BbDesktopBrowserApi | null;
+  threadId: string;
+}
+
 interface DestroyPersistedBrowserViewsForEnvironmentArgs {
   desktopBrowser: BbDesktopBrowserApi | null;
   environmentId: string;
@@ -102,6 +107,20 @@ export function destroyPersistedBrowserViewsForThread({
   for (const record of records) {
     if (record.threadId === threadId) {
       destroyPersistedBrowserView({ desktopBrowser, tabId: record.tabId });
+    }
+  }
+}
+
+export function hidePersistedBrowserViewsForThread({
+  desktopBrowser,
+  threadId,
+}: HidePersistedBrowserViewsForThreadArgs): void {
+  if (desktopBrowser === null) {
+    return;
+  }
+  for (const record of browserViewRecords.values()) {
+    if (record.threadId === threadId) {
+      desktopBrowser.setVisible({ tabId: record.tabId, visible: false });
     }
   }
 }

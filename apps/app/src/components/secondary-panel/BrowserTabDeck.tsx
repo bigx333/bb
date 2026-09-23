@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { BbDesktopBrowserTarget } from "@bb/desktop-contract";
 import type { BrowserFixedPanelTab } from "@/lib/fixed-panel-tabs-state";
 import { getDesktopBrowserApi } from "@/lib/bb-desktop";
@@ -9,6 +9,7 @@ import {
 import {
   createBrowserViewVisibilityCoordinator,
   destroyPersistedBrowserView,
+  hidePersistedBrowserViewsForThread,
 } from "./browserViewVisibilityCoordinator";
 import type { UpdateBrowserTabArgs } from "./useThreadFileTabs";
 
@@ -51,6 +52,13 @@ export function BrowserTabLifecycleObserver({
 }: BrowserTabLifecycleObserverProps) {
   const desktopBrowser = useMemo(() => getDesktopBrowserApi(), []);
   const previousTabIdsRef = useRef<BrowserTabIdSnapshot | null>(null);
+
+  useLayoutEffect(
+    () => () => {
+      hidePersistedBrowserViewsForThread({ desktopBrowser, threadId });
+    },
+    [desktopBrowser, threadId],
+  );
 
   useEffect(() => {
     const tabIds = buildBrowserTabIdSet({ browserTabs });
