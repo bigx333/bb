@@ -257,6 +257,7 @@ export async function buildPluginServer(
               if (
                 args.pluginData === PLUGIN_RUNTIME_FALLBACK_RESOLVE_MARK ||
                 PLUGIN_SDK_SUBPATH_FILTER.test(args.path) ||
+                /^zod($|\/)/.test(args.path) ||
                 options.fallbackResolve === undefined
               ) {
                 return undefined;

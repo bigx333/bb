@@ -171,6 +171,7 @@ interface MutableRoot {
 }
 
 const mutableRoots = new Map<string, MutableRoot>();
+const builtinZodParentUrls = new Set<string>();
 const MUTABLE_ROOT_MARKER = /[?&]bbPluginLoad=(\d+)\.(\d+)/;
 let nextMutableRootId = 1;
 let nextMutableRootEpoch = 1;
@@ -180,6 +181,18 @@ function registerMutableRootHooks(): void {
   if (mutableRootHooks !== null) return;
   mutableRootHooks = registerHooks({
     resolve(specifier, context, nextResolve) {
+      const parentUrl = context.parentURL?.split("?")[0];
+      if (
+        specifier === ZOD_SPECIFIER &&
+        availableZodRuntimePath !== undefined &&
+        parentUrl !== undefined &&
+        builtinZodParentUrls.has(parentUrl)
+      ) {
+        return {
+          url: pathToFileURL(availableZodRuntimePath).href,
+          shortCircuit: true,
+        };
+      }
       const parent = MUTABLE_ROOT_MARKER.exec(context.parentURL ?? "");
       const runtimeExternalUrl = pluginRuntimeExternalUrls.get(specifier);
       if (runtimeExternalUrl !== undefined) {
@@ -320,7 +333,12 @@ export function forgetMutableRoot(rootDir: string): void {
 }
 
 function releaseMutableRoots(rootUrls: Iterable<string>): void {
-  for (const rootUrl of rootUrls) mutableRoots.delete(rootUrl);
+  for (const rootUrl of rootUrls) {
+    mutableRoots.delete(rootUrl);
+    for (const parentUrl of builtinZodParentUrls) {
+      if (parentUrl.startsWith(rootUrl)) builtinZodParentUrls.delete(parentUrl);
+    }
+  }
   if (mutableRoots.size > 0 || mutableRootHooks === null) return;
   mutableRootHooks.deregister();
   mutableRootHooks = null;
@@ -1127,7 +1145,7 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
           sdkVersion: PLUGIN_SDK_VERSION,
           bbVersion: deps.appVersion,
           validatedConfig: {
-            serverEntry: serverEntry.path,
+            serverEntry,
             packageName: manifest.packageName,
             pluginVersion: manifest.version,
           },
@@ -1743,6 +1761,9 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
           serverEntry: serverEntry.path,
         }),
       };
+      if (alias[ZOD_SPECIFIER] !== undefined) {
+        builtinZodParentUrls.add(pathToFileURL(serverEntry.path).href);
+      }
       let mod: { default?: unknown };
       if (serverEntry.loader === "jiti") {
         const jiti = createJiti(import.meta.url, {

@@ -171,7 +171,9 @@ describe("plugin server build", () => {
       },
     );
 
-    expect(await readFile(jsPath, "utf8")).toContain("function plugin");
+    expect((await import(pathToFileURL(jsPath).href)).default.name).toBe(
+      "plugin",
+    );
   });
 
   it("places release ESM in an explicit module package scope", async () => {
