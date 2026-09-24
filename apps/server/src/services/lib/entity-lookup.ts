@@ -5,6 +5,7 @@ import {
   getProject,
   getSessionById,
   getThread,
+  listLatestClosedSessionsForHosts,
   listPublicHosts,
   type HostDaemonSessionRow,
 } from "@bb/db";
@@ -13,6 +14,7 @@ import type { Host } from "@bb/domain";
 import type { DbConnection } from "@bb/db";
 import type { NotificationHub } from "../../ws/hub.js";
 import { ApiError } from "../../errors.js";
+import { resolveHostDisconnectDisplay } from "../hosts/host-disconnect-display.js";
 import {
   destroyedHostUnavailableDetails,
   destroyedThreadEnvironmentDetails,
@@ -63,15 +65,37 @@ function getOpenDaemonSessionForHost(
   return session;
 }
 
-function toHostStatus(deps: HostLookupDeps, hostId: string): Host["status"] {
-  const host = getNonDestroyedHost(deps.db, hostId);
-  if (!host) {
-    return "disconnected";
+function listShownConnectedHostIds(
+  deps: HostLookupDeps,
+  hostIds: readonly string[],
+): Set<string> {
+  const now = Date.now();
+  const connectedHostIds = new Set<string>();
+  const unregisteredHostIds: string[] = [];
+  for (const hostId of hostIds) {
+    if (getOpenDaemonSessionForHost(deps, hostId)) {
+      connectedHostIds.add(hostId);
+    } else {
+      unregisteredHostIds.push(hostId);
+    }
   }
+  for (const session of listLatestClosedSessionsForHosts(deps.db, {
+    hostIds: unregisteredHostIds,
+  })) {
+    if (resolveHostDisconnectDisplay(session, now).kind === "hidden") {
+      connectedHostIds.add(session.hostId);
+    }
+  }
+  return connectedHostIds;
+}
 
-  return getOpenDaemonSessionForHost(deps, hostId)
-    ? "connected"
-    : "disconnected";
+export function toHostWithStatus(deps: HostLookupDeps, row: HostRow): Host {
+  return toHostRecord(
+    row,
+    listShownConnectedHostIds(deps, [row.id]).has(row.id)
+      ? "connected"
+      : "disconnected",
+  );
 }
 
 function toHostRecord(row: HostRow, status: Host["status"]): Host {
@@ -115,11 +139,15 @@ export function listPublicHostsWithStatus(
   options?: { includeCreating?: boolean },
 ): Host[] {
   const rows = listPublicHosts(deps.db, options);
+  const connectedHostIds = listShownConnectedHostIds(
+    deps,
+    rows.map((row) => row.id),
+  );
 
   return rows.map((row) =>
     toHostRecord(
       row,
-      getOpenDaemonSessionForHost(deps, row.id) ? "connected" : "disconnected",
+      connectedHostIds.has(row.id) ? "connected" : "disconnected",
     ),
   );
 }
@@ -139,7 +167,7 @@ export function requireNonDestroyedHostWithStatus(
       destroyedHostUnavailableDetails(host.destroyedAt),
     );
   }
-  return toHostRecord(host, toHostStatus(deps, host.id));
+  return toHostWithStatus(deps, host);
 }
 
 export function getNonDestroyedHostWithStatus(
@@ -150,7 +178,7 @@ export function getNonDestroyedHostWithStatus(
   if (!host) {
     return null;
   }
-  return toHostRecord(host, toHostStatus(deps, host.id));
+  return toHostWithStatus(deps, host);
 }
 
 export function requireConnectedHostSession(
