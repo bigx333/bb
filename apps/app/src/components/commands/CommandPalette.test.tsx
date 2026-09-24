@@ -318,7 +318,7 @@ function makeThread(
     environmentName: null,
     environmentBranchName: null,
     environmentWorkspaceDisplayKind: "other",
-    runtime: { displayStatus: "idle", hostReconnectGraceExpiresAt: null },
+    runtime: { displayStatus: "idle" },
     queuedWork: "none",
     ...overrides,
   };
@@ -1425,7 +1425,6 @@ describe("CommandPalette", () => {
           lastReadAt: Date.now(),
           runtime: {
             displayStatus: "active",
-            hostReconnectGraceExpiresAt: null,
           },
         }),
         makeThread("draft", { lastReadAt: Date.now() }),

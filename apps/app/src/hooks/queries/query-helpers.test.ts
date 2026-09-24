@@ -164,7 +164,6 @@ function makeThreadResponse(
     environmentId: "env-1",
     runtime: {
       displayStatus: "waiting-for-host",
-      hostReconnectGraceExpiresAt: null,
     },
     canSpawnChild: false,
     ...thread,
@@ -536,7 +535,6 @@ describe("optimisticallyInsertThread", () => {
       queryClient.getQueryData<ThreadListEntry[]>(threadListKey) ?? [];
     expect(thread?.runtime).toEqual({
       displayStatus: "waiting-for-host",
-      hostReconnectGraceExpiresAt: null,
     });
   });
 
@@ -584,7 +582,6 @@ describe("optimisticallyInsertThread", () => {
       makeThreadResponse({
         runtime: {
           displayStatus: "active",
-          hostReconnectGraceExpiresAt: null,
         },
       }),
     );

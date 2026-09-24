@@ -404,22 +404,10 @@ function buildHostConnectionNotice(
   thread: ThreadWithRuntime,
   hostName: string | null,
 ): HostConnectionNotice | null {
-  const displayStatus = thread.runtime.displayStatus;
-  if (
-    displayStatus !== "host-reconnecting" &&
-    displayStatus !== "waiting-for-host"
-  ) {
+  if (thread.runtime.displayStatus !== "waiting-for-host") {
     return null;
   }
-
-  const subject = hostName ?? "Host";
-  return {
-    label:
-      displayStatus === "host-reconnecting"
-        ? `${subject} disconnected. Waiting for reconnection...`
-        : `${subject} disconnected`,
-    tone: displayStatus === "host-reconnecting" ? "pending" : "error",
-  };
+  return { label: `${hostName ?? "Host"} disconnected` };
 }
 
 function buildMarkdownPreviewLinkRouting({
@@ -2977,10 +2965,6 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
                   thread.runtime.displayStatus,
                 ) &&
                 !isThreadTimelinePending,
-              ongoingIndicatorLabel:
-                thread.runtime.displayStatus === "host-reconnecting"
-                  ? "Waiting for reconnection"
-                  : undefined,
               timelineRows,
               isStopping: thread.status === "stopping",
               stoppingAnchorAt: thread.updatedAt,

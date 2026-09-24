@@ -366,7 +366,6 @@ describe("buildProjectThreadGroups", () => {
         latestAttentionAt: 2_000,
         runtime: {
           displayStatus: "active",
-          hostReconnectGraceExpiresAt: null,
         },
       }),
       createThread({
@@ -377,7 +376,6 @@ describe("buildProjectThreadGroups", () => {
         latestAttentionAt: 1_500,
         runtime: {
           displayStatus: "active",
-          hostReconnectGraceExpiresAt: null,
         },
       }),
       createThread({
@@ -422,7 +420,6 @@ describe("buildProjectThreadGroups", () => {
         status: "active",
         runtime: {
           displayStatus: "active",
-          hostReconnectGraceExpiresAt: null,
         },
       }),
       createThread({
@@ -475,7 +472,6 @@ describe("buildProjectThreadGroups", () => {
         latestAttentionAt: 5,
         runtime: {
           displayStatus: "active",
-          hostReconnectGraceExpiresAt: null,
         },
       }),
       createThread({

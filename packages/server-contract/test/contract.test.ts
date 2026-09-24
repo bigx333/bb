@@ -1206,7 +1206,6 @@ describe("server-contract canonical schemas", () => {
           updatedAt: 2,
           runtime: {
             displayStatus: "idle",
-            hostReconnectGraceExpiresAt: null,
           },
           activity: {
             activeWorkflowCount: 0,

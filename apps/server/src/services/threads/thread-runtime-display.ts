@@ -123,10 +123,7 @@ function threadStatusRuntimeState(status: ThreadStatus): ThreadRuntimeState {
     case "active":
     case "stopping":
     case "error":
-      return {
-        displayStatus: status,
-        hostReconnectGraceExpiresAt: null,
-      };
+      return { displayStatus: status };
   }
 }
 
@@ -216,10 +213,7 @@ function resolveThreadRuntimeStateFromLatestSession(
   ) {
     return threadStatusRuntimeState("active");
   }
-  return {
-    displayStatus: "waiting-for-host",
-    hostReconnectGraceExpiresAt: null,
-  };
+  return { displayStatus: "waiting-for-host" };
 }
 
 function getLatestClosedSessionForHost(

@@ -30,14 +30,14 @@ function makeChild(
       activePlanModeCount: 0,
       activeGoalCount: 0,
     },
-    runtime: { displayStatus: "idle", hostReconnectGraceExpiresAt: null },
+    runtime: { displayStatus: "idle" },
     ...overrides,
   };
 }
 
 const busyChild = makeChild({
   status: "active",
-  runtime: { displayStatus: "active", hostReconnectGraceExpiresAt: null },
+  runtime: { displayStatus: "active" },
 });
 const pendingChild = makeChild({ hasPendingInteraction: true });
 const unreadChild = makeChild({ latestAttentionAt: 20, lastReadAt: 10 });
@@ -353,7 +353,7 @@ describe("thread-activity", () => {
           activePlanModeCount: 0,
           activeGoalCount: 1,
         },
-        runtime: { displayStatus: "active", hostReconnectGraceExpiresAt: null },
+        runtime: { displayStatus: "active" },
       });
 
       expect(threadListIndicatorStateForThread(thread, false)).toEqual({
@@ -521,7 +521,7 @@ describe("thread-activity", () => {
           activePlanModeCount: 0,
           activeGoalCount: 0,
         },
-        runtime: { displayStatus: "active", hostReconnectGraceExpiresAt: null },
+        runtime: { displayStatus: "active" },
       });
 
       expect(getCollapsedChildActivity([busyUnreadErrorChild])).toEqual({
@@ -543,7 +543,7 @@ describe("thread-activity", () => {
       const busyAndPending = makeChild({
         status: "active",
         hasPendingInteraction: true,
-        runtime: { displayStatus: "active", hostReconnectGraceExpiresAt: null },
+        runtime: { displayStatus: "active" },
       });
       expect(getCollapsedChildActivity([busyAndPending])).toEqual({
         pending: true,
@@ -699,7 +699,7 @@ describe("thread-activity", () => {
           activePlanModeCount: 0,
           activeGoalCount: 0,
         },
-        runtime: { displayStatus: "active", hostReconnectGraceExpiresAt: null },
+        runtime: { displayStatus: "active" },
         status: "active",
       });
 
