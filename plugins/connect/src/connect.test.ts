@@ -522,6 +522,98 @@ describe("ShareRegistry", () => {
     await fakeHost.harness.dispose();
   });
 
+  function registryWithFailingDeclarations(failingHostId: string) {
+    const kv = new Map<string, unknown>([
+      [
+        SHARES_KV_KEY,
+        {
+          [`${REMOTE_HOST_ID}:3000`]: {
+            hostId: REMOTE_HOST_ID,
+            port: 3000,
+            createdAt: 1,
+          },
+          [`${failingHostId}:5000`]: {
+            hostId: failingHostId,
+            port: 5000,
+            createdAt: 2,
+          },
+        },
+      ],
+    ]);
+    const fakeHost = createConnectFakeHost();
+    const pluginBb = fakeHost.bb as unknown as Parameters<typeof plugin>[0];
+    const declared: Array<{ hostId: string; ports: readonly number[] }> = [];
+    Object.defineProperty(pluginBb.hosts, "declareSharedPorts", {
+      value: (hostId: string, ports: readonly number[]) => {
+        if (hostId === failingHostId) {
+          throw new Error(
+            `cannot declare shared ports for unknown host ${hostId}`,
+          );
+        }
+        declared.push({ hostId, ports });
+      },
+    });
+    const registry = new ShareRegistry({
+      kv: {
+        async get<T>(key: string) {
+          return kv.get(key) as T | undefined;
+        },
+        async set(key: string, value: unknown) {
+          kv.set(key, value);
+        },
+        async delete(key: string) {
+          kv.delete(key);
+        },
+      },
+      hosts: pluginBb.hosts,
+      hostResolver: new ShareHostResolver(() => pluginBb.sdk),
+      getLoopbackBaseUrl: () => "http://127.0.0.1:38886",
+      getCredential: () => ({
+        serverUrl: "https://sawyer.getbb.app",
+        handle: "sawyer",
+        credential: "bbcred_x",
+      }),
+      log: pluginBb.log,
+    });
+    return { kv, fakeHost, declared, registry };
+  }
+
+  it("skips shares on a removed host at activation instead of failing it", async () => {
+    const { kv, fakeHost, declared, registry } =
+      registryWithFailingDeclarations("host-deleted");
+    const persisted = kv.get(SHARES_KV_KEY);
+    await registry.load();
+
+    await expect(
+      registry.declareMachineShares(() => true),
+    ).resolves.toBeUndefined();
+
+    expect(declared).toEqual([{ hostId: REMOTE_HOST_ID, ports: [3000] }]);
+    expect(kv.get(SHARES_KV_KEY)).toEqual(persisted);
+    expect(fakeHost.harness.logEntries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: "warn",
+          message: expect.stringContaining(
+            "not declaring shared ports for removed host host-deleted",
+          ),
+        }),
+      ]),
+    );
+    await fakeHost.harness.dispose();
+  });
+
+  it("still fails activation when a declaration fails for a host that exists", async () => {
+    const { fakeHost, registry } =
+      registryWithFailingDeclarations(REMOTE_HOST_ID);
+    await registry.load();
+
+    await expect(registry.declareMachineShares(() => true)).rejects.toThrow(
+      `cannot declare shared ports for unknown host ${REMOTE_HOST_ID}`,
+    );
+    await fakeHost.harness.dispose();
+  });
+
   it("loads valid entries when another kv entry is malformed", async () => {
     const kv = new Map<string, unknown>([
       [

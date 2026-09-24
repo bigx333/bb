@@ -374,6 +374,12 @@ export class ShareRegistry {
       try {
         this.declare(hostId);
       } catch (error) {
+        if (await this.isRemovedHost(hostId)) {
+          this.options.log.warn(
+            `not declaring shared ports for removed host ${hostId}; run \`bb connect unexpose <port> --host ${hostId}\` to prune its shares`,
+          );
+          continue;
+        }
         firstError ??= error;
         this.options.log.warn(
           `failed to declare shared ports for host ${hostId}: ${errorMessage(error)}`,
@@ -381,6 +387,15 @@ export class ShareRegistry {
       }
     }
     if (firstError !== undefined) throw firstError;
+  }
+
+  private async isRemovedHost(hostId: string): Promise<boolean> {
+    try {
+      await this.options.hostResolver.byId(hostId);
+      return false;
+    } catch (error) {
+      return error instanceof ShareHostNotFoundError;
+    }
   }
 
   private async normalizeLegacyShares(serverHostId: string): Promise<void> {
