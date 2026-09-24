@@ -7,10 +7,6 @@ import { threadScope, turnScope } from "@bb/domain";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { settleDanglingBackgroundTasks } from "../../src/services/threads/background-task-reconciliation.js";
 import { handleDaemonSocketClosed } from "../../src/internal/session-owner-side-effects.js";
-import {
-  DAEMON_ACTIVE_WORK_DISCONNECT_GRACE_MS,
-  DAEMON_DISCONNECT_GRACE_MS,
-} from "../../src/constants.js";
 import { internalAuthHeaders } from "../helpers/commands.js";
 import {
   seedEnvironment,
@@ -23,6 +19,8 @@ import {
 } from "../helpers/seed.js";
 import { createMockHubSocket } from "../helpers/mock-hub-socket.js";
 import { withTestHarness, type TestAppHarness } from "../helpers/test-app.js";
+
+const HOST_DISCONNECTED_FOR_MS = 10 * 60_000;
 
 function backgroundTaskItemData(args: {
   itemId: string;
@@ -446,19 +444,16 @@ describe("background-task lifecycle reconciliation triggers", () => {
     });
   });
 
-  it("settles open tasks after the disconnect grace elapses without a reconnect", async () => {
+  it("keeps open tasks while the host stays disconnected", async () => {
     await withTestHarness(async (harness) => {
       const { session, thread } = seedOpenBackgroundTaskThread(harness);
 
       vi.useFakeTimers();
       handleDaemonSocketClosed(harness.deps, { sessionId: session.id });
+      vi.advanceTimersByTime(HOST_DISCONNECTED_FOR_MS);
 
       expect(listSettledBackgroundTaskItems(harness, thread.id)).toEqual([]);
-
-      vi.advanceTimersByTime(DAEMON_DISCONNECT_GRACE_MS + 1);
-      expect(listSettledBackgroundTaskItems(harness, thread.id)).toEqual([
-        { status: "interrupted", taskStatus: "stopped" },
-      ]);
+      harness.hub.cancelPendingDaemonDisconnect(session.id);
     });
   });
 });
@@ -559,53 +554,21 @@ describe("active thread disconnect reconciliation triggers", () => {
     },
   );
 
-  it("records a lost host connection after the live event window elapses without a reconnect", async () => {
+  it("keeps an active turn running while the host stays disconnected", async () => {
     await withTestHarness(async (harness) => {
       const { session, thread } = seedActiveTurnThread(harness);
 
       vi.useFakeTimers();
       handleDaemonSocketClosed(harness.deps, { sessionId: session.id });
+      await vi.advanceTimersByTimeAsync(HOST_DISCONNECTED_FOR_MS);
 
-      await vi.advanceTimersByTimeAsync(DAEMON_DISCONNECT_GRACE_MS + 1);
       expect(getThread(harness.deps.db, thread.id)?.status).toBe("active");
       expect(
         listEvents(harness.deps.db, { threadId: thread.id })
           .filter((row) => row.type !== "turn/started")
           .map((row) => row.type),
       ).toEqual([]);
-
-      await vi.advanceTimersByTimeAsync(
-        DAEMON_ACTIVE_WORK_DISCONNECT_GRACE_MS - DAEMON_DISCONNECT_GRACE_MS,
-      );
-      expect(getThread(harness.deps.db, thread.id)?.status).toBe("error");
-      expect(
-        listEvents(harness.deps.db, { threadId: thread.id })
-          .filter((row) => row.type !== "turn/started")
-          .map((row) => ({
-            data: JSON.parse(row.data),
-            type: row.type,
-          })),
-      ).toEqual([
-        expect.objectContaining({
-          type: "turn/completed",
-        }),
-        expect.objectContaining({
-          data: expect.objectContaining({
-            code: "thread_command_failed",
-            message:
-              "Thread interrupted because the connection to the host was lost",
-            detail: "Please retry the thread to continue.",
-          }),
-          type: "system/error",
-        }),
-        expect.objectContaining({
-          data: {
-            reason: "host-daemon-restarted",
-            cause: "host-connection-lost",
-          },
-          type: "system/thread/interrupted",
-        }),
-      ]);
+      harness.hub.cancelPendingDaemonDisconnect(session.id);
     });
   });
 });
