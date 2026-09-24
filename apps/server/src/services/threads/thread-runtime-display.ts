@@ -30,7 +30,7 @@ import {
 } from "@bb/thread-view";
 import type { ThreadResponse } from "@bb/server-contract";
 import type { NotificationHub } from "../../ws/hub.js";
-import { resolveHostDisconnectDisplay } from "../hosts/host-disconnect-display.js";
+import { isHostDisconnectHidden } from "../hosts/host-disconnect-display.js";
 import { resolveProviderPlanCommand } from "../providers/provider-plan-command.js";
 import type { ProviderRegistryService } from "../providers/provider-registry.js";
 import { listQueuedThreadMessageCountsByThreadIds } from "@bb/db";
@@ -210,28 +210,16 @@ function resolveThreadRuntimeStateFromLatestSession(
     return threadStatusRuntimeState(args.status);
   }
 
-  if (args.hostConnected) {
+  if (
+    args.hostConnected ||
+    isHostDisconnectHidden(args.latestClosedSession, args.now ?? Date.now())
+  ) {
     return threadStatusRuntimeState("active");
   }
-
-  const display = resolveHostDisconnectDisplay(
-    args.latestClosedSession,
-    args.now ?? Date.now(),
-  );
-  switch (display.kind) {
-    case "hidden":
-      return threadStatusRuntimeState("active");
-    case "reconnecting":
-      return {
-        displayStatus: "host-reconnecting",
-        hostReconnectGraceExpiresAt: display.graceExpiresAt,
-      };
-    case "offline":
-      return {
-        displayStatus: "waiting-for-host",
-        hostReconnectGraceExpiresAt: null,
-      };
-  }
+  return {
+    displayStatus: "waiting-for-host",
+    hostReconnectGraceExpiresAt: null,
+  };
 }
 
 function getLatestClosedSessionForHost(
@@ -575,8 +563,7 @@ export function toThreadListEntryResponses(
       latestClosedSession:
         thread.environmentHostId === null
           ? null
-          : (latestClosedSessionByHostId.get(thread.environmentHostId) ??
-            null),
+          : (latestClosedSessionByHostId.get(thread.environmentHostId) ?? null),
       now: args.now,
       thread,
     });
