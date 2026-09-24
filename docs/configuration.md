@@ -921,6 +921,26 @@ keys you want to keep hidden. `reset` restores the default empty list and shows
 every group. The plugin's `setPreference` and `resetPreference` RPCs expose the
 same operations to its app client.
 
+### Thread row actions
+
+**Customize row actions**, next to **Customize list** in the same menus, picks
+the quick-action buttons a thread row shows on hover, left of its actions menu.
+Check up to three and drag the checked ones to reorder them; the rest are
+disabled until one is unchecked. Checking none leaves only the actions menu.
+Archived rows keep their unarchive button regardless of this setting.
+
+The Thread list plugin's `rowActions` preference defaults to `["archive"]` and
+accepts up to three of `archive`, `pin`, `read`, `rename`, `copyLink`, and
+`split`, in display order. Duplicates are deduplicated, and `split` is skipped
+where a split is unavailable.
+
+```sh
+bb thread-list prefs get rowActions
+bb thread-list prefs set rowActions '["pin","copyLink","archive"]'
+bb thread-list prefs set rowActions '[]'
+bb thread-list prefs reset rowActions
+```
+
 ### Sidebar footer
 
 Settings → Appearance → Sidebar footer lets users reorder and hide built-in and

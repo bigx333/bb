@@ -325,6 +325,21 @@ describe("ThreadRow", () => {
     ).toBe("calc(var(--spacing) * 0)");
   });
 
+  it.each([[[]], [["pin", "copyLink", "archive"]]] as const)(
+    "reserves one action for an archived row whatever the row actions (%j)",
+    (rowActions) => {
+      getDefaultStore().set(preferenceValueAtom("rowActions"), [...rowActions]);
+      renderThreadRow({
+        thread: createThread({ archivedAt: 1, isArchived: true }),
+      });
+      expect(
+        document
+          .querySelector<HTMLElement>(".bb-sidebar-hover-actions-inset")
+          ?.style.getPropertyValue("--bb-sidebar-hover-actions-inset"),
+      ).toBe("calc(var(--spacing) * 7.5)");
+    },
+  );
+
   it("opens the thread in a split from the split row action", () => {
     getDefaultStore().set(preferenceValueAtom("rowActions"), ["split"]);
     const slot = renderThreadRow();

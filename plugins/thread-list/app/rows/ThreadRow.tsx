@@ -499,7 +499,9 @@ function ThreadRowComponent({
               ? "pr-(--bb-sidebar-hover-actions-inset) max-md:pointer-coarse:pr-0"
               : SIDEBAR_HOVER_ACTIONS_INSET_CLASS),
         )}
-        style={getHoverActionsInsetStyle(rowActionIds.length)}
+        style={getHoverActionsInsetStyle(
+          thread.archivedAt !== null ? 1 : rowActionIds.length,
+        )}
       >
         <a
           ref={rowLinkRef}
