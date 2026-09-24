@@ -34,6 +34,18 @@ export const environmentGroupingSchema = z.union([
 ]);
 export type EnvironmentGrouping = z.infer<typeof environmentGroupingSchema>;
 
+export const THREAD_ROW_ACTION_IDS = [
+  "archive",
+  "pin",
+  "read",
+  "rename",
+  "copyLink",
+  "split",
+] as const;
+export const THREAD_ROW_ACTION_LIMIT = 3;
+export const threadRowActionIdSchema = z.enum(THREAD_ROW_ACTION_IDS);
+export type ThreadRowActionId = z.infer<typeof threadRowActionIdSchema>;
+
 const collapsibleSectionIdSchema = z.enum(["pinned", "threads"]);
 
 const hiddenGroupsSchema = z
@@ -113,6 +125,18 @@ export const preferenceDefinitions = {
     [],
     "Groups moved into More: threads, project:<id>, section:<id>, or machine:<id>.",
     "sidebar.hiddenGroups",
+  ),
+  rowActions: definePreference(
+    z
+      .array(threadRowActionIdSchema)
+      .max(LIST_MAX_LENGTH)
+      .transform((value) => [...new Set(value)])
+      .refine((value) => value.length <= THREAD_ROW_ACTION_LIMIT, {
+        message: `Choose at most ${THREAD_ROW_ACTION_LIMIT} row actions`,
+      }),
+    ["archive"],
+    `Up to ${THREAD_ROW_ACTION_LIMIT} quick actions shown on a thread row's hover, left to right before its actions menu: archive, pin, read, rename, copyLink, or split. An empty list shows only the menu.`,
+    null,
   ),
   collapsedSections: definePreference(
     z.array(collapsibleSectionIdSchema).max(LIST_MAX_LENGTH),

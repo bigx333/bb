@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getDefaultStore } from "jotai";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type {
   PluginSidebarProject,
@@ -23,6 +24,10 @@ import {
 } from "./sidebarRowClasses.js";
 import type { ThreadSectionMoveDestination } from "./ThreadSectionMoveProvider.js";
 import type { ThreadRowOptions } from "./ThreadRow.js";
+import {
+  preferenceValueAtom,
+  resetPreferencesSyncForTest,
+} from "../preferences/preferences-sync.js";
 
 installTestPluginRuntime();
 const { ThreadSectionMoveProvider } = await import(
@@ -196,6 +201,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   resetSidebarTitleDoubleClickForTest();
+  resetPreferencesSyncForTest();
 });
 
 describe("ThreadRow", () => {
@@ -280,6 +286,53 @@ describe("ThreadRow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Archive thread" }));
     expect(slot.inspection.sidebarActionCalls).toEqual([
       { method: "archive", threadId: "thr_test" },
+    ]);
+  });
+
+  it("shows the configured row actions in order and reserves their width", () => {
+    getDefaultStore().set(preferenceValueAtom("rowActions"), [
+      "pin",
+      "copyLink",
+      "archive",
+    ]);
+    const slot = renderThreadRow();
+    const controls = document.querySelector("[data-sidebar-row-controls]");
+    expect(
+      Array.from(controls?.querySelectorAll("button") ?? []).map((button) =>
+        button.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Pin", "Copy thread link", "Archive thread", "Thread actions"]);
+    expect(
+      document
+        .querySelector<HTMLElement>(".bb-sidebar-hover-actions-inset")
+        ?.style.getPropertyValue("--bb-sidebar-hover-actions-inset"),
+    ).toBe("calc(var(--spacing) * 22.5)");
+    fireEvent.click(screen.getByRole("button", { name: "Pin" }));
+    expect(slot.inspection.sidebarActionCalls).toEqual([
+      { method: "setPinned", threadId: "thr_test", pinned: true },
+    ]);
+  });
+
+  it("shows only the actions menu when every row action is turned off", () => {
+    getDefaultStore().set(preferenceValueAtom("rowActions"), []);
+    renderThreadRow();
+    expect(screen.queryByRole("button", { name: "Archive thread" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Thread actions" })).toBeTruthy();
+    expect(
+      document
+        .querySelector<HTMLElement>(".bb-sidebar-hover-actions-inset")
+        ?.style.getPropertyValue("--bb-sidebar-hover-actions-inset"),
+    ).toBe("calc(var(--spacing) * 0)");
+  });
+
+  it("opens the thread in a split from the split row action", () => {
+    getDefaultStore().set(preferenceValueAtom("rowActions"), ["split"]);
+    const slot = renderThreadRow();
+    fireEvent.click(screen.getByRole("button", { name: "Open in split" }));
+    expect(
+      slot.inspection.sidebarActionCalls.filter((call) => call.options),
+    ).toEqual([
+      { method: "open", threadId: "thr_test", options: { split: true } },
     ]);
   });
 

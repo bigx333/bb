@@ -19,6 +19,7 @@ import { useSidebarSortable } from "../rows/sortableMotion.js";
 import { useSidebarReorderDnd } from "../dnd/useSidebarReorderDnd.js";
 
 export function SidebarVisibilityCustomize({
+  checkboxLabel = (title) => `Show ${title} in sidebar`,
   items,
   listLabel,
   onActivate,
@@ -26,11 +27,13 @@ export function SidebarVisibilityCustomize({
   onExit,
   onReorder,
   onVisibleChange,
+  reorderableIds,
   testIdPrefix = "sidebar-navigation",
   title,
   variant,
   visibleIds,
 }: {
+  checkboxLabel?: (title: string) => string;
   items: readonly SidebarVisibilityItem[];
   listLabel: string;
   onActivate?: (
@@ -41,6 +44,7 @@ export function SidebarVisibilityCustomize({
   onExit?: () => void;
   onReorder: (activeId: string, overId: string) => void;
   onVisibleChange: (id: string, visible: boolean) => void;
+  reorderableIds?: readonly string[];
   testIdPrefix?: string;
   title: string;
   variant: "compact" | "card";
@@ -50,6 +54,10 @@ export function SidebarVisibilityCustomize({
   const doneButtonRef = useRef<HTMLButtonElement>(null);
   const orderedIds = useMemo(() => items.map((item) => item.id), [items]);
   const visibleIdSet = useMemo(() => new Set(visibleIds), [visibleIds]);
+  const reorderableIdSet = useMemo(
+    () => new Set(reorderableIds ?? orderedIds),
+    [reorderableIds, orderedIds],
+  );
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       if (
@@ -92,7 +100,10 @@ export function SidebarVisibilityCustomize({
               key={item.id}
               item={item}
               checked={visibleIdSet.has(item.id)}
-              reorderDisabled={items.length < 2}
+              checkboxLabel={checkboxLabel(item.title)}
+              reorderDisabled={
+                reorderableIdSet.size < 2 || !reorderableIdSet.has(item.id)
+              }
               onActivate={
                 onActivate
                   ? (event) => {
@@ -177,6 +188,7 @@ export function SidebarVisibilityCustomize({
 }
 
 function SidebarCustomizeItem({
+  checkboxLabel,
   checked,
   item,
   onActivate,
@@ -184,6 +196,7 @@ function SidebarCustomizeItem({
   reorderDisabled,
   testIdPrefix,
 }: {
+  checkboxLabel: string;
   checked: boolean;
   item: SidebarVisibilityItem;
   onActivate?: ((event: SidebarActivationModifiers) => void) | undefined;
@@ -267,7 +280,8 @@ function SidebarCustomizeItem({
         <Checkbox
           id={checkboxId}
           checked={checked}
-          aria-label={`Show ${item.title} in sidebar`}
+          aria-label={checkboxLabel}
+          disabled={item.disabled}
           onCheckedChange={(nextChecked) =>
             onCheckedChange(nextChecked === true)
           }

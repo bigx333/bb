@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { useComposedRefs } from "@radix-ui/react-compose-refs";
+import { useAtomValue } from "jotai";
 import { Icon } from "@/components/ui/icon";
 import {
   Tooltip,
@@ -43,6 +44,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import type { SidebarThread } from "../model/sidebar-thread.js";
 import { useSidebarProjectName } from "../model/use-sidebar-data.js";
+import { threadRowActionsAtom } from "../preferences/atoms.js";
 import { AppCommandShortcutPill } from "../ui/AppCommandShortcutPill.js";
 import { SidebarStickyTier } from "../ui/sidebar.js";
 import {
@@ -77,6 +79,8 @@ import {
   ThreadActionsContextMenu,
   ThreadActionsMenu,
   ThreadArchiveQuickAction,
+  ThreadRowQuickActions,
+  visibleThreadRowActions,
 } from "./ThreadActionsMenu.js";
 import {
   ThreadStatusGlyph,
@@ -163,6 +167,12 @@ export const REORDER_PLACEMENT_CLASS: Record<SidebarReorderPlacement, string> =
     after:
       "after:pointer-events-none after:absolute after:inset-x-1 after:-bottom-px after:h-0.5 after:rounded-full after:bg-sidebar-ring after:content-['']",
   };
+
+function getHoverActionsInsetStyle(actionCount: number): CSSProperties {
+  return {
+    "--bb-sidebar-hover-actions-inset": `calc(var(--spacing) * ${7.5 * actionCount})`,
+  } as CSSProperties;
+}
 
 function getThreadRowStyle(depth: number): CSSProperties {
   return {
@@ -358,6 +368,10 @@ function ThreadRowComponent({
   const openInSplit = useCallback(() => {
     actions.open(thread.id, { split: true });
   }, [actions, thread.id]);
+  const rowActionIds = visibleThreadRowActions(
+    useAtomValue(threadRowActionsAtom),
+    splitAvailable,
+  );
   const parentOptions = options.kind === "parent" ? options : null;
   const isParentRow = parentOptions !== null;
   const isParentCollapsed = parentOptions?.isCollapsed ?? false;
@@ -482,9 +496,10 @@ function ThreadRowComponent({
           !shortcut &&
             !isEditing &&
             (reserveActionSpace
-              ? "pr-7.5 max-md:pointer-coarse:pr-0"
+              ? "pr-(--bb-sidebar-hover-actions-inset) max-md:pointer-coarse:pr-0"
               : SIDEBAR_HOVER_ACTIONS_INSET_CLASS),
         )}
+        style={getHoverActionsInsetStyle(rowActionIds.length)}
       >
         <a
           ref={rowLinkRef}
@@ -662,9 +677,12 @@ function ThreadRowComponent({
               >
                 <SidebarRowControls
                   primaryAction={
-                    <ThreadArchiveQuickAction
+                    <ThreadRowQuickActions
+                      actionIds={rowActionIds}
                       thread={thread}
                       className={SIDEBAR_CONTROL_BUTTON_CLASS}
+                      onOpenInSplit={openInSplit}
+                      onRename={startEditing}
                     />
                   }
                 >

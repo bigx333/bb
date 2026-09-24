@@ -34,6 +34,7 @@ import { ActionMenuItem, ActionMenuSeparator } from "../ui/action-menu-items.js"
 import { CompactLongPressMenu } from "../ui/compact-long-press-menu.js";
 import { copyToClipboardWithToast } from "../ui/clipboard.js";
 import type { SidebarThread } from "../model/sidebar-thread.js";
+import type { ThreadRowActionId } from "../../shared/preferences.js";
 import { useThreadSectionMove } from "./ThreadSectionMoveProvider.js";
 
 interface ThreadActionsMenuBaseProps {
@@ -394,6 +395,138 @@ export function ThreadArchiveQuickAction({
       <TooltipContent side="bottom">{label}</TooltipContent>
     </Tooltip>
   );
+}
+
+function ThreadQuickActionButton({
+  icon,
+  label,
+  className,
+  onSelect,
+}: {
+  icon: IconName;
+  label: string;
+  className?: string;
+  onSelect: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cn("rounded-md p-0", className)}
+          aria-label={label}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onSelect();
+          }}
+        >
+          <Icon name={icon} className={COARSE_POINTER_ICON_SIZE_CLASS} />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+export function visibleThreadRowActions(
+  actionIds: readonly ThreadRowActionId[],
+  splitAvailable: boolean,
+): ThreadRowActionId[] {
+  return actionIds.filter((id) => id !== "split" || splitAvailable);
+}
+
+export function ThreadRowQuickActions({
+  actionIds,
+  thread,
+  className,
+  onOpenInSplit,
+  onRename,
+}: {
+  actionIds: readonly ThreadRowActionId[];
+  thread: SidebarThread;
+  className?: string;
+  onOpenInSplit?: () => void;
+  onRename: () => void;
+}) {
+  const actions = experimental_useSidebarThreadActions();
+  const isRead = !thread.isUnread;
+  const isPinned = thread.pinnedAt !== null;
+  return actionIds.map((id) => {
+    switch (id) {
+      case "archive":
+        return (
+          <ThreadArchiveQuickAction
+            key={id}
+            thread={thread}
+            className={className}
+          />
+        );
+      case "pin":
+        return (
+          <ThreadQuickActionButton
+            key={id}
+            icon={isPinned ? "PinOff" : "Pin"}
+            label={isPinned ? "Unpin" : "Pin"}
+            className={className}
+            onSelect={() => {
+              void actions
+                .setPinned(thread.id, !isPinned)
+                .catch(() => undefined);
+            }}
+          />
+        );
+      case "read":
+        return (
+          <ThreadQuickActionButton
+            key={id}
+            icon={isRead ? "Mail" : "MailOpen"}
+            label={isRead ? "Mark unread" : "Mark read"}
+            className={className}
+            onSelect={() => {
+              void actions.setRead(thread.id, !isRead);
+            }}
+          />
+        );
+      case "rename":
+        return (
+          <ThreadQuickActionButton
+            key={id}
+            icon="Edit"
+            label="Rename"
+            className={className}
+            onSelect={onRename}
+          />
+        );
+      case "copyLink":
+        return (
+          <ThreadQuickActionButton
+            key={id}
+            icon="Copy"
+            label="Copy thread link"
+            className={className}
+            onSelect={() => {
+              void copyToClipboardWithToast(getThreadUrl(thread), {
+                successMessage: "Thread link copied",
+                errorMessage: "Failed to copy thread link",
+              });
+            }}
+          />
+        );
+      case "split":
+        return onOpenInSplit ? (
+          <ThreadQuickActionButton
+            key={id}
+            icon="Columns2"
+            label="Open in split"
+            className={className}
+            onSelect={onOpenInSplit}
+          />
+        ) : null;
+    }
+  });
 }
 
 export function ThreadActionsMenu({

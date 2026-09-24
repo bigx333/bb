@@ -29,6 +29,7 @@ import {
   SidebarCustomizeActionContent,
   type SidebarVisibilityItem,
 } from "./SidebarVisibilityControls.js";
+import { ThreadRowActionsCustomize } from "./ThreadRowActionsCustomize.js";
 
 export interface ThreadListVisibilityGroup extends SidebarVisibilityItem {
   id: SidebarSectionId;
@@ -42,6 +43,7 @@ interface ThreadListVisibilityState {
   hide: (id: string) => void;
   restore: (id: string) => void;
   customize: () => void;
+  customizeRowActions: () => void;
   label: string;
   selectedThreadId?: string;
 }
@@ -65,7 +67,9 @@ export function ThreadListVisibility({
   children: ReactNode;
 }) {
   const [hidden, setHidden] = useAtom(sidebarHiddenGroupsAtom);
-  const [customizing, setCustomizing] = useState(false);
+  const [customizing, setCustomizing] = useState<
+    "list" | "rowActions" | null
+  >(null);
   const compact = useIsCompactViewport();
   const container = useRef<HTMLDivElement>(null);
   const focusTarget = useRef<string | null>(null);
@@ -112,7 +116,8 @@ export function ThreadListVisibility({
     hiddenGroups: orderedGroups.filter((group) => hiddenIds.has(group.id)),
     label,
     selectedThreadId,
-    customize: () => setCustomizing(true),
+    customize: () => setCustomizing("list"),
+    customizeRowActions: () => setCustomizing("rowActions"),
     hide: (id) => {
       focusTarget.current = "more";
       setVisible(id, false);
@@ -125,7 +130,15 @@ export function ThreadListVisibility({
   return (
     <VisibilityContext.Provider value={value}>
       <div ref={container} tabIndex={-1} className="min-w-0 outline-none">
-        {customizing ? (
+        {customizing === "rowActions" ? (
+          <ThreadRowActionsCustomize
+            onDone={() => {
+              focusTarget.current = "more";
+              setCustomizing(null);
+            }}
+            variant={compact ? "compact" : "card"}
+          />
+        ) : customizing === "list" ? (
           <SidebarVisibilityCustomize
             items={orderedGroups}
             visibleIds={orderedGroups
@@ -144,7 +157,7 @@ export function ThreadListVisibility({
             }}
             onDone={() => {
               focusTarget.current = "more";
-              setCustomizing(false);
+              setCustomizing(null);
             }}
             title="Customize list"
             listLabel={label}
@@ -194,6 +207,9 @@ export function ThreadListVisibilityMenuItems({
       )}
       <Item onSelect={state.customize}>
         <SidebarCustomizeActionContent label="Customize list" />
+      </Item>
+      <Item onSelect={state.customizeRowActions}>
+        <SidebarCustomizeActionContent label="Customize row actions" />
       </Item>
     </>
   );
