@@ -13,7 +13,6 @@ import {
   hostDaemonSessionOpenResponseSchema,
 } from "@bb/host-daemon-contract";
 import { describe, expect, it } from "vitest";
-import { ApiError } from "../../src/errors.js";
 import { HostSharedPortCoordinator } from "../../src/ws/host-shared-ports.js";
 import { NotificationHub } from "../../src/ws/hub.js";
 import {
@@ -174,10 +173,11 @@ describe("HostSharedPortCoordinator", () => {
     );
   });
 
-  it("rejects a registered credentialless session after its lease stales", () => {
+  it("retains declarations for a credentialless session and delivers them once it has a credential", () => {
     const { db, host, hub, session, sharedPorts } = setup();
     if (!session) throw new Error("expected an online host session");
-    hub.registerDaemon(session.id, host.id, createMockHubSocket());
+    const daemonSocket = createMockHubSocket();
+    hub.registerDaemon(session.id, host.id, daemonSocket);
     sharedPorts.recordHostConnectCapability({
       hostId: host.id,
       sessionId: session.id,
@@ -185,25 +185,26 @@ describe("HostSharedPortCoordinator", () => {
     });
     heartbeatSession(db, session.id, Date.now() - 1);
 
-    let declarationError: unknown;
-    try {
-      sharedPorts.declareSharedPorts({
-        ownerId: "connect",
-        hostId: host.id,
-        ports: [3000],
-      });
-    } catch (error) {
-      declarationError = error;
-    }
+    sharedPorts.declareSharedPorts({
+      ownerId: "connect",
+      hostId: host.id,
+      ports: [3000],
+    });
 
-    expect(declarationError).toBeInstanceOf(ApiError);
-    expect(declarationError).toMatchObject({
-      body: { code: "connect_host_unenrolled" },
+    expect(daemonSocket.messages).toEqual([]);
+    expect(sharedPorts.reconcileSharedPortsForHost(host.id).ports).toEqual([]);
+
+    sharedPorts.recordHostConnectCapability({
+      hostId: host.id,
+      sessionId: session.id,
+      hasMachineCredential: true,
     });
-    expect(sharedPorts.reconcileSharedPortsForHost(host.id)).toEqual({
-      generation: 0,
-      ports: [],
-    });
+    expect(sharedPorts.pushCurrentSharedPortsForHost(host.id).ports).toEqual([
+      3000,
+    ]);
+    expect(
+      daemonSocket.messages.map((message) => JSON.parse(message)),
+    ).toMatchObject([{ type: "connect-shares.replace", ports: [3000] }]);
   });
 
   it("retains changed generations through a full disconnect and reconnect", () => {
@@ -274,25 +275,6 @@ describe("HostSharedPortCoordinator", () => {
       }),
     ).toThrow(/unknown host missing-host/);
 
-    const credentialless = setup({ enrolled: false });
-    let unenrolledError: unknown;
-    try {
-      credentialless.sharedPorts.declareSharedPorts({
-        ownerId: "connect",
-        hostId: credentialless.host.id,
-        ports: [3000],
-      });
-    } catch (error) {
-      unenrolledError = error;
-    }
-    expect(unenrolledError).toBeInstanceOf(ApiError);
-    expect(unenrolledError).toMatchObject({
-      body: {
-        code: "connect_host_unenrolled",
-        message: expect.stringContaining("enroll it via Connect"),
-      },
-    });
-
     const offline = setup({ online: false });
     expect(() =>
       offline.sharedPorts.declareSharedPorts({
@@ -331,6 +313,55 @@ describe("HostSharedPortCoordinator", () => {
         },
       ],
     );
+  });
+
+  it("retains declarations for unenrolled hosts and delivers them after enrollment", () => {
+    const unenrolled = setup({ enrolled: false });
+    expect(() =>
+      unenrolled.sharedPorts.declareSharedPorts({
+        ownerId: "connect",
+        hostId: unenrolled.host.id,
+        ports: [3000],
+      }),
+    ).not.toThrow();
+    expect(
+      unenrolled.sharedPorts.reconcileSharedPortsForHost(unenrolled.host.id)
+        .ports,
+    ).toEqual([]);
+
+    upsertHost(unenrolled.db, noopNotifier, {
+      id: unenrolled.host.id,
+      name: unenrolled.host.name,
+      connectMachineId: "machine-enrolled-later",
+    });
+    const session = openSession(unenrolled.db, {
+      hostId: unenrolled.host.id,
+      instanceId: "enrolled-instance",
+      hostName: unenrolled.host.name,
+      dataDir: "/tmp/host-data",
+      protocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
+      heartbeatIntervalMs: 30_000,
+      leaseTimeoutMs: 90_000,
+    });
+    unenrolled.sharedPorts.recordHostConnectCapability({
+      hostId: unenrolled.host.id,
+      sessionId: session.id,
+      hasMachineCredential: true,
+    });
+    const daemonSocket = createMockHubSocket();
+    unenrolled.hub.registerDaemon(
+      session.id,
+      unenrolled.host.id,
+      daemonSocket,
+    );
+
+    expect(
+      unenrolled.sharedPorts.pushCurrentSharedPortsForHost(unenrolled.host.id)
+        .ports,
+    ).toEqual([3000]);
+    expect(
+      daemonSocket.messages.map((message) => JSON.parse(message)),
+    ).toMatchObject([{ type: "connect-shares.replace", ports: [3000] }]);
   });
 
   it("always accepts empty declarations for offline, unenrolled, and removed hosts", () => {
@@ -525,7 +556,7 @@ describe("daemon session connect shares", () => {
     });
   });
 
-  it("rejects declarations while the current session lacks its machine credential", async () => {
+  it("retains declarations while the current session lacks its machine credential", async () => {
     await withTestHarness(async (harness) => {
       upsertHost(harness.db, harness.hub, {
         id: "host-1",
@@ -562,19 +593,43 @@ describe("daemon session connect shares", () => {
       });
       const messagesBeforeDeclaration = [...daemonSocket.messages];
 
-      expect(() =>
-        harness.deps.sharedPorts.declareSharedPorts({
-          ownerId: "connect",
-          hostId: "host-1",
-          ports: [4173],
-        }),
-      ).toThrow(
-        'cannot share ports from host "Host" (host-1) because it has no bb connect machine credential; enroll it via Connect in Settings > Machines',
-      );
+      harness.deps.sharedPorts.declareSharedPorts({
+        ownerId: "connect",
+        hostId: "host-1",
+        ports: [4173],
+      });
       expect(daemonSocket.messages).toEqual(messagesBeforeDeclaration);
       expect(
-        harness.deps.sharedPorts.reconcileSharedPortsForHost("host-1"),
-      ).toEqual({ generation: 0, ports: [] });
+        harness.deps.sharedPorts.reconcileSharedPortsForHost("host-1").ports,
+      ).toEqual([]);
+
+      const credentialedResponse = await harness.app.request(
+        "/internal/session/open",
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${createTestDaemonHostKey({ hostId: "host-1" })}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            hostId: "host-1",
+            instanceId: "restarted-with-credential",
+            hostName: "Host",
+            hasMachineCredential: true,
+            platform: "darwin",
+            dataDir: "/tmp/host-data",
+            localApiPort: null,
+            protocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
+            activeThreads: [],
+          }),
+        },
+      );
+      expect(credentialedResponse.status).toBe(201);
+      expect(
+        hostDaemonSessionOpenResponseSchema.parse(
+          await credentialedResponse.json(),
+        ).connectShares.ports,
+      ).toEqual([4173]);
     });
   });
 });

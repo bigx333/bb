@@ -318,11 +318,12 @@ Control-plane declarations for host-local daemon behavior. Use
 `bb.hosts.declareSharedPorts(hostId, ports)` to replace this plugin's
 desired loopback port set for one host. `ports` contains integers from 1–65535;
 the server deduplicates and sorts them, owns the generation, and delivers the
-resulting set to the daemon. If an enrolled host is offline, the declaration
-stays dormant on the server and is delivered when a credentialed daemon
-session reconnects. The call fails with an actionable error if the host has no
-bb connect machine enrollment or its connected daemon reports that the local
-machine credential is missing.
+resulting set to the daemon. If the host is offline, has no bb connect machine
+enrollment yet, or its connected daemon reports that the local machine
+credential is missing, the declaration stays dormant on the server and is
+delivered when a credentialed daemon session connects. The call throws only for
+a host that does not exist or was removed. Use `ensureSharedPortTunnel` when you
+need an actionable error for a host that cannot serve shares right now.
 
 Call `await bb.hosts.ensureSharedPortTunnel(hostId)` to lazily assign and read
 the host's `{ label, baseDomain }` for constructing public URLs. The enrolled

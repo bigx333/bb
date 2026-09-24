@@ -94,11 +94,7 @@ export class HostSharedPortCoordinator {
     }
     const normalized = normalizePorts(ports);
     if (normalized.length > 0) {
-      const host = this.requireDurablyEnrolledHost(hostId);
-      const state = this.connectCapabilityState(hostId);
-      if (state !== null && !state.capability.hasMachineCredential) {
-        this.throwMissingMachineCredential(host);
-      }
+      this.requireShareCapableHost(hostId);
     }
     return normalized;
   }
