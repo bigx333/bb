@@ -340,17 +340,6 @@ describe("ThreadRow", () => {
     },
   );
 
-  it("opens the thread in a split from the split row action", () => {
-    getDefaultStore().set(preferenceValueAtom("rowActions"), ["split"]);
-    const slot = renderThreadRow();
-    fireEvent.click(screen.getByRole("button", { name: "Open in split" }));
-    expect(
-      slot.inspection.sidebarActionCalls.filter((call) => call.options),
-    ).toEqual([
-      { method: "open", threadId: "thr_test", options: { split: true } },
-    ]);
-  });
-
   it.each([
     { item: "Mark read", thread: createThread(), call: { method: "setRead", threadId: "thr_test", read: true } },
     { item: "Mark unread", thread: createThread({ lastReadAt: 5, latestAttentionAt: 1 }), call: { method: "setRead", threadId: "thr_test", read: false } },

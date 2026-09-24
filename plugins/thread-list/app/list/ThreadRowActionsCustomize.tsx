@@ -53,7 +53,7 @@ export function ThreadRowActionsCustomize({
         if (!isThreadRowActionId(id)) return;
         setEnabled((current) =>
           visible
-            ? current.includes(id) || current.length >= THREAD_ROW_ACTION_LIMIT
+            ? current.includes(id)
               ? current
               : [...current, id]
             : current.filter((key) => key !== id),

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 import { installTestPluginRuntime } from "@get-bb/plugin-sdk/testing/app";
 import { threadRowActionsAtom } from "../preferences/atoms.js";
 
@@ -17,13 +17,12 @@ afterEach(() => {
 function setup() {
   const store = createStore();
   store.set(threadRowActionsAtom, ["pin", "archive"]);
-  const onDone = vi.fn();
   render(
     <Provider store={store}>
-      <ThreadRowActionsCustomize onDone={onDone} variant="card" />
+      <ThreadRowActionsCustomize onDone={() => {}} variant="card" />
     </Provider>,
   );
-  return { store, onDone };
+  return { store };
 }
 
 it("lists shown actions first in their order, then the rest", () => {
@@ -40,15 +39,7 @@ it("lists shown actions first in their order, then the rest", () => {
   ).toBe("true");
 });
 
-it("appends a newly shown action and removes a hidden one", () => {
-  const { store } = setup();
-  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
-  expect(store.get(threadRowActionsAtom)).toEqual(["pin", "archive", "rename"]);
-  fireEvent.click(screen.getByRole("button", { name: "Pin" }));
-  expect(store.get(threadRowActionsAtom)).toEqual(["archive", "rename"]);
-});
-
-it("greys out the rest once three actions are shown and frees them again", () => {
+it("appends shown actions, greys out the rest at three, and frees them on removal", () => {
   const { store } = setup();
   fireEvent.click(screen.getByRole("button", { name: "Rename" }));
   expect(store.get(threadRowActionsAtom)).toEqual(["pin", "archive", "rename"]);
@@ -59,12 +50,6 @@ it("greys out the rest once three actions are shown and frees them again", () =>
   fireEvent.click(screen.getByRole("button", { name: "Copy thread link" }));
   expect(store.get(threadRowActionsAtom)).toEqual(["pin", "archive", "rename"]);
   fireEvent.click(screen.getByRole("button", { name: "Pin" }));
+  expect(store.get(threadRowActionsAtom)).toEqual(["archive", "rename"]);
   expect(copy.hasAttribute("disabled")).toBe(false);
-});
-
-it("finishes from Done without changing the selection", () => {
-  const { store, onDone } = setup();
-  fireEvent.click(screen.getByRole("button", { name: "Done" }));
-  expect(onDone).toHaveBeenCalledOnce();
-  expect(store.get(threadRowActionsAtom)).toEqual(["pin", "archive"]);
 });

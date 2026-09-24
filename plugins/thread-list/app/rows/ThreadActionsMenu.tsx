@@ -448,7 +448,7 @@ export function ThreadRowQuickActions({
   actionIds: readonly ThreadRowActionId[];
   thread: SidebarThread;
   className?: string;
-  onOpenInSplit?: () => void;
+  onOpenInSplit: () => void;
   onRename: () => void;
 }) {
   const actions = experimental_useSidebarThreadActions();
@@ -516,7 +516,7 @@ export function ThreadRowQuickActions({
           />
         );
       case "split":
-        return onOpenInSplit ? (
+        return (
           <ThreadQuickActionButton
             key={id}
             icon="Columns2"
@@ -524,7 +524,7 @@ export function ThreadRowQuickActions({
             className={className}
             onSelect={onOpenInSplit}
           />
-        ) : null;
+        );
     }
   });
 }
