@@ -1,6 +1,6 @@
 import { useCallback, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
+import { Icon, type IconName } from "@/components/ui/icon";
 import {
   Popover,
   PopoverContent,
@@ -50,10 +50,16 @@ export interface SidebarActivationModifiers {
   ctrlKey: boolean;
 }
 
-export function SidebarCustomizeActionContent({ label }: { label: string }) {
+export function SidebarCustomizeActionContent({
+  label,
+  icon = "FilterHorizontal",
+}: {
+  label: string;
+  icon?: IconName;
+}) {
   return (
     <>
-      <Icon name="FilterHorizontal" aria-hidden="true" />
+      <Icon name={icon} aria-hidden="true" />
       {label}
     </>
   );

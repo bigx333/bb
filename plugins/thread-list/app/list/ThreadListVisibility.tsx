@@ -209,7 +209,10 @@ export function ThreadListVisibilityMenuItems({
         <SidebarCustomizeActionContent label="Customize list" />
       </Item>
       <Item onSelect={state.customizeRowActions}>
-        <SidebarCustomizeActionContent label="Customize row actions" />
+        <SidebarCustomizeActionContent
+          label="Customize row actions"
+          icon="Rows2"
+        />
       </Item>
     </>
   );
