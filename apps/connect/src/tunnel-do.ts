@@ -20,6 +20,7 @@ export interface Env {
   BETTER_AUTH_SECRET: string;
   ACCOUNT_APP_URL?: string;
   CLOUD_DEV?: string;
+  TUNNEL_TICKETS?: string;
   ASSETLINKS_SHA256_FINGERPRINTS?: string;
 }
 

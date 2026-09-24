@@ -65,7 +65,7 @@ jobs:
       # @bb/tunnel-contract) straight from source. Plain wrangler uses the
       # top-level (production) config -> the bb-connect worker on *.getbb.app.
       # This only uploads a version; it serves no traffic until someone deploys
-      # it gradually with `wrangler versions deploy`.
+      # it by hand with `wrangler versions deploy` (docs/connect-gate-rollout.md).
       # BETTER_AUTH_SECRET is set once by hand (it must equal bb-web's) and
       # is intentionally NOT synced from CI.
       - name: Upload tunnel gate version
@@ -91,9 +91,9 @@ jobs:
           {
             echo "### Gate version uploaded, not deployed"
             echo
-            echo "Version \`$VERSION_ID\` serves no traffic yet. Roll it out by hand from \`apps/connect\`:"
+            echo "Version \`$VERSION_ID\` serves no traffic yet. Deploy it by hand from \`apps/connect\` (docs/connect-gate-rollout.md):"
             echo
             echo "- \`pnpm exec wrangler deployments status\` shows the version serving traffic (\`<old>\`)."
-            echo "- \`pnpm exec wrangler versions deploy $VERSION_ID@5% <old>@95% --yes\`, then 25%, then \`$VERSION_ID@100%\`, holding 15-30 minutes at each step."
-            echo "- Roll back with \`pnpm exec wrangler rollback <old> -m <reason>\`."
+            echo "- \`pnpm exec wrangler versions deploy $VERSION_ID@100% --yes --message \"<what changed>\"\`. Every connected tunnel reconnects once."
+            echo "- Roll back with \`pnpm exec wrangler rollback <old> -m \"<reason>\"\`."
           } >> "$GITHUB_STEP_SUMMARY"
