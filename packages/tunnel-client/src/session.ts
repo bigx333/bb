@@ -21,6 +21,7 @@ import type { TunnelClientLogger } from "./logger.js";
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const HEARTBEAT_DEADLINE_MS = 60_000;
+const HEARTBEAT_LATE_TICK_MS = HEARTBEAT_INTERVAL_MS + 5_000;
 
 const UNREGISTERED_PORT_BODY = "this port is not shared";
 const textEncoder = new TextEncoder();
@@ -124,6 +125,7 @@ export class TunnelSession {
   private readonly httpStreams = new Map<number, HttpStream>();
   private readonly wsStreams = new Map<number, WsStream>();
   private lastAck = Date.now();
+  private lastHeartbeatTickAt = Date.now();
   private heartbeat: ReturnType<typeof setInterval> | undefined;
   private remoteClientCount = 0;
   lastRemoteActivityAt: number | null = null;
@@ -136,8 +138,18 @@ export class TunnelSession {
 
   start(): void {
     const { tunnel } = this.options;
+    this.lastAck = Date.now();
+    this.lastHeartbeatTickAt = this.lastAck;
     this.heartbeat = setInterval(() => {
-      if (Date.now() - this.lastAck > HEARTBEAT_DEADLINE_MS) {
+      const now = Date.now();
+      const stalledMs = now - this.lastHeartbeatTickAt;
+      this.lastHeartbeatTickAt = now;
+      if (stalledMs > HEARTBEAT_LATE_TICK_MS) {
+        this.options.log.warn(
+          `event loop stalled for ${Math.round(stalledMs / 1000)}s; restarting the tunnel heartbeat deadline`,
+        );
+        this.lastAck = now;
+      } else if (now - this.lastAck > HEARTBEAT_DEADLINE_MS) {
         this.options.log.warn("tunnel heartbeat missed; reconnecting");
         tunnel.terminate();
         return;
