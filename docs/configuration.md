@@ -923,10 +923,12 @@ same operations to its app client.
 
 ### Thread row actions
 
-**Customize row actions**, next to **Customize list** in the same menus, picks
+**Customize row actions**, in a thread row's actions menu, picks
 the quick-action buttons a thread row shows on hover, left of its actions menu.
-Check up to three and drag the checked ones to reorder them; the rest are
-disabled until one is unchecked. Checking none leaves only the actions menu.
+It previews a thread row with three action slots; click a slot to pick an
+action for it or None. Picking an action that is already in another slot swaps
+the two. Drag a filled slot onto another to reorder them. Setting every slot to
+None leaves only the actions menu.
 Archived rows keep their unarchive button regardless of this setting.
 
 The Thread list plugin's `rowActions` preference defaults to `["archive"]` and

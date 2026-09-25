@@ -41,6 +41,6 @@ of the list. The same preference is available through `setPreference` RPC.
 hover, left to right before its actions menu. Choose from `archive`, `pin`, `read`,
 `rename`, `copyLink`, and `split`; the default is `'["archive"]'` and `'[]'`
 leaves only the menu. For example,
-`bb thread-list prefs set rowActions '["pin","archive"]'`. In the app, a list
-menu's Customize row actions opens the same choice, where shown actions can be
-dragged into order.
+`bb thread-list prefs set rowActions '["pin","archive"]'`. In the app, a thread
+row's actions menu has Customize row actions, which previews the row's three
+action slots; each slot picks an action or None, and filled slots drag to reorder.

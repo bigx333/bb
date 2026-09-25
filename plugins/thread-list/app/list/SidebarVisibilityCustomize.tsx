@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useId, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react";
 import { DndContext, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { Button } from "@/components/ui/button";
@@ -19,7 +26,6 @@ import { useSidebarSortable } from "../rows/sortableMotion.js";
 import { useSidebarReorderDnd } from "../dnd/useSidebarReorderDnd.js";
 
 export function SidebarVisibilityCustomize({
-  checkboxLabel = (title) => `Show ${title} in sidebar`,
   items,
   listLabel,
   onActivate,
@@ -27,13 +33,11 @@ export function SidebarVisibilityCustomize({
   onExit,
   onReorder,
   onVisibleChange,
-  reorderableIds,
   testIdPrefix = "sidebar-navigation",
   title,
   variant,
   visibleIds,
 }: {
-  checkboxLabel?: (title: string) => string;
   items: readonly SidebarVisibilityItem[];
   listLabel: string;
   onActivate?: (
@@ -44,20 +48,13 @@ export function SidebarVisibilityCustomize({
   onExit?: () => void;
   onReorder: (activeId: string, overId: string) => void;
   onVisibleChange: (id: string, visible: boolean) => void;
-  reorderableIds?: readonly string[];
   testIdPrefix?: string;
   title: string;
   variant: "compact" | "card";
   visibleIds: readonly string[];
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const doneButtonRef = useRef<HTMLButtonElement>(null);
   const orderedIds = useMemo(() => items.map((item) => item.id), [items]);
   const visibleIdSet = useMemo(() => new Set(visibleIds), [visibleIds]);
-  const reorderableIdSet = useMemo(
-    () => new Set(reorderableIds ?? orderedIds),
-    [reorderableIds, orderedIds],
-  );
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       if (
@@ -72,16 +69,6 @@ export function SidebarVisibilityCustomize({
   const { dndContextProps, onClickCapture } = useSidebarReorderDnd({
     onDragEnd: handleDragEnd,
   });
-
-  useEffect(() => {
-    if (variant === "compact") {
-      doneButtonRef.current?.focus();
-      return;
-    }
-    containerRef.current
-      ?.querySelector<HTMLElement>("[data-sidebar-customize-launch]")
-      ?.focus();
-  }, [variant]);
 
   const list = (
     <div
@@ -100,10 +87,7 @@ export function SidebarVisibilityCustomize({
               key={item.id}
               item={item}
               checked={visibleIdSet.has(item.id)}
-              checkboxLabel={checkboxLabel(item.title)}
-              reorderDisabled={
-                reorderableIdSet.size < 2 || !reorderableIdSet.has(item.id)
-              }
+              reorderDisabled={items.length < 2}
               onActivate={
                 onActivate
                   ? (event) => {
@@ -120,6 +104,44 @@ export function SidebarVisibilityCustomize({
       </DndContext>
     </div>
   );
+
+  return (
+    <SidebarCustomizePanel
+      onDone={onDone}
+      testIdPrefix={testIdPrefix}
+      title={title}
+      variant={variant}
+    >
+      {list}
+    </SidebarCustomizePanel>
+  );
+}
+
+export function SidebarCustomizePanel({
+  children,
+  onDone,
+  testIdPrefix,
+  title,
+  variant,
+}: {
+  children: ReactNode;
+  onDone: () => void;
+  testIdPrefix: string;
+  title: string;
+  variant: "compact" | "card";
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const doneButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (variant === "compact") {
+      doneButtonRef.current?.focus();
+      return;
+    }
+    containerRef.current
+      ?.querySelector<HTMLElement>("[data-sidebar-customize-launch]")
+      ?.focus();
+  }, [variant]);
 
   if (variant === "compact") {
     return (
@@ -149,7 +171,7 @@ export function SidebarVisibilityCustomize({
             {title}
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto pt-1">{list}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto pt-1">{children}</div>
       </div>
     );
   }
@@ -160,7 +182,12 @@ export function SidebarVisibilityCustomize({
       className="rounded-lg border border-sidebar-border/40 bg-sidebar-accent/40 p-1"
       data-testid={`${testIdPrefix}-customize-inline`}
       onKeyDown={(event) => {
-        if (event.key !== "Escape") return;
+        if (
+          event.key !== "Escape" ||
+          !(event.target instanceof Node) ||
+          !event.currentTarget.contains(event.target)
+        )
+          return;
         event.preventDefault();
         onDone();
       }}
@@ -182,13 +209,12 @@ export function SidebarVisibilityCustomize({
           Done
         </Button>
       </div>
-      {list}
+      {children}
     </div>
   );
 }
 
 function SidebarCustomizeItem({
-  checkboxLabel,
   checked,
   item,
   onActivate,
@@ -196,7 +222,6 @@ function SidebarCustomizeItem({
   reorderDisabled,
   testIdPrefix,
 }: {
-  checkboxLabel: string;
   checked: boolean;
   item: SidebarVisibilityItem;
   onActivate?: ((event: SidebarActivationModifiers) => void) | undefined;
@@ -280,8 +305,7 @@ function SidebarCustomizeItem({
         <Checkbox
           id={checkboxId}
           checked={checked}
-          aria-label={checkboxLabel}
-          disabled={item.disabled}
+          aria-label={`Show ${item.title} in sidebar`}
           onCheckedChange={(nextChecked) =>
             onCheckedChange(nextChecked === true)
           }

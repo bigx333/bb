@@ -36,6 +36,7 @@ import { copyToClipboardWithToast } from "../ui/clipboard.js";
 import type { SidebarThread } from "../model/sidebar-thread.js";
 import type { ThreadRowActionId } from "../../shared/preferences.js";
 import { useThreadSectionMove } from "./ThreadSectionMoveProvider.js";
+import { useCustomizeThreadRowActions } from "../list/ThreadListVisibility.js";
 
 interface ThreadActionsMenuBaseProps {
   thread: SidebarThread;
@@ -205,6 +206,7 @@ function ThreadActionsMenuItems({
 }: ThreadActionsMenuItemsProps) {
   const actions = experimental_useSidebarThreadActions();
   const unarchiveThread = useUnarchiveThread();
+  const customizeRowActions = useCustomizeThreadRowActions();
   const isCompactViewport = useIsCompactViewport();
   const isDrawer = surface === "dropdown" && isCompactViewport;
   const showSeparators = !isDrawer;
@@ -304,6 +306,18 @@ function ThreadActionsMenuItems({
         Rename
       </ActionMenuItem>
       {showSeparators ? <ActionMenuSeparator surface={surface} /> : null}
+      {customizeRowActions ? (
+        <>
+          <ActionMenuItem
+            surface={surface}
+            icon="FilterHorizontal"
+            onSelect={() => customizeRowActions(thread.id)}
+          >
+            Customize row actions
+          </ActionMenuItem>
+          {showSeparators ? <ActionMenuSeparator surface={surface} /> : null}
+        </>
+      ) : null}
       <ActionMenuItem
         surface={surface}
         icon={isArchived ? "ArchiveRestore" : "Archive"}

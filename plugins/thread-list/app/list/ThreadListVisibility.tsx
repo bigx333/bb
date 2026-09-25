@@ -16,7 +16,10 @@ import { ContextMenuItem } from "@/components/ui/context-menu";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import { useSidebarThreadDraftIds } from "@get-bb/plugin-sdk/app";
 import { ActionMenuSeparator } from "../ui/action-menu-items.js";
-import { SidebarContentElementContext } from "../ui/sidebar.js";
+import {
+  SIDEBAR_CONTENT_SELECTOR,
+  SidebarContentElementContext,
+} from "../ui/sidebar.js";
 import { reorderStoredOrder } from "../model/stored-order.js";
 import { sidebarHiddenGroupsAtom } from "../preferences/atoms.js";
 import { CollapsedThreadStatusGlyph } from "../rows/ThreadRow.js";
@@ -43,7 +46,7 @@ interface ThreadListVisibilityState {
   hide: (id: string) => void;
   restore: (id: string) => void;
   customize: () => void;
-  customizeRowActions: () => void;
+  customizeRowActions: (threadId: string) => void;
   label: string;
   selectedThreadId?: string;
 }
@@ -73,6 +76,10 @@ export function ThreadListVisibility({
   const compact = useIsCompactViewport();
   const container = useRef<HTMLDivElement>(null);
   const focusTarget = useRef<string | null>(null);
+  const rowActionsOrigin = useRef<{
+    threadId: string;
+    scrollTop: number;
+  } | null>(null);
   const hiddenIds = useMemo(() => new Set(hidden), [hidden]);
   const groupsById = new Map(groups.map((group) => [group.id, group]));
   const orderedGroups = order.flatMap((id) => {
@@ -112,12 +119,47 @@ export function ThreadListVisibility({
     });
     return () => cancelAnimationFrame(frame);
   }, [hidden, customizing]);
+  useEffect(() => {
+    const origin = rowActionsOrigin.current;
+    if (origin === null || customizing) return;
+    rowActionsOrigin.current = null;
+    const scroller = container.current?.closest<HTMLElement>(
+      SIDEBAR_CONTENT_SELECTOR,
+    );
+    if (scroller) scroller.scrollTop = origin.scrollTop;
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        const link = Array.from(
+          container.current?.querySelectorAll<HTMLElement>(
+            "[data-sidebar-thread-id]",
+          ) ?? [],
+        ).find((element) => element.dataset.sidebarThreadId === origin.threadId);
+        let row = link?.parentElement ?? null;
+        while (row && !row.querySelector('button[aria-label="Thread actions"]'))
+          row = row.parentElement;
+        const target =
+          row?.querySelector<HTMLElement>('button[aria-label="Thread actions"]') ??
+          link ??
+          container.current;
+        target?.focus({ preventScroll: true });
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [customizing]);
   const value: ThreadListVisibilityState = {
     hiddenGroups: orderedGroups.filter((group) => hiddenIds.has(group.id)),
     label,
     selectedThreadId,
     customize: () => setCustomizing("list"),
-    customizeRowActions: () => setCustomizing("rowActions"),
+    customizeRowActions: (threadId) => {
+      rowActionsOrigin.current = {
+        threadId,
+        scrollTop:
+          container.current?.closest<HTMLElement>(SIDEBAR_CONTENT_SELECTOR)
+            ?.scrollTop ?? 0,
+      };
+      setCustomizing("rowActions");
+    },
     hide: (id) => {
       focusTarget.current = "more";
       setVisible(id, false);
@@ -132,10 +174,7 @@ export function ThreadListVisibility({
       <div ref={container} tabIndex={-1} className="min-w-0 outline-none">
         {customizing === "rowActions" ? (
           <ThreadRowActionsCustomize
-            onDone={() => {
-              focusTarget.current = "more";
-              setCustomizing(null);
-            }}
+            onDone={() => setCustomizing(null)}
             variant={compact ? "compact" : "card"}
           />
         ) : customizing === "list" ? (
@@ -170,6 +209,12 @@ export function ThreadListVisibility({
       </div>
     </VisibilityContext.Provider>
   );
+}
+
+export function useCustomizeThreadRowActions():
+  | ((threadId: string) => void)
+  | null {
+  return useContext(VisibilityContext)?.customizeRowActions ?? null;
 }
 
 export function ThreadListVisibilityGroupScope({
@@ -207,12 +252,6 @@ export function ThreadListVisibilityMenuItems({
       )}
       <Item onSelect={state.customize}>
         <SidebarCustomizeActionContent label="Customize list" />
-      </Item>
-      <Item onSelect={state.customizeRowActions}>
-        <SidebarCustomizeActionContent
-          label="Customize row actions"
-          icon="Rows2"
-        />
       </Item>
     </>
   );

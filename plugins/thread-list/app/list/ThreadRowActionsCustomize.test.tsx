@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
 import { afterEach, expect, it } from "vitest";
 import { installTestPluginRuntime } from "@get-bb/plugin-sdk/testing/app";
 import { threadRowActionsAtom } from "../preferences/atoms.js";
 
 installTestPluginRuntime();
-const { ThreadRowActionsCustomize } = await import(
+const { assignRowActionSlot, ThreadRowActionsCustomize } = await import(
   "./ThreadRowActionsCustomize.js"
 );
 
@@ -14,7 +14,7 @@ afterEach(() => {
   cleanup();
 });
 
-function setup() {
+it("previews empty slots before shown actions, next to the menu", () => {
   const store = createStore();
   store.set(threadRowActionsAtom, ["pin", "archive"]);
   render(
@@ -22,34 +22,29 @@ function setup() {
       <ThreadRowActionsCustomize onDone={() => {}} variant="card" />
     </Provider>,
   );
-  return { store };
-}
-
-it("lists shown actions first in their order, then the rest", () => {
-  setup();
   expect(
     Array.from(
-      document.querySelectorAll<HTMLElement>("[data-sidebar-customize-item]"),
-    ).map((item) => item.dataset.sidebarCustomizeItem),
-  ).toEqual(["pin", "archive", "read", "rename", "copyLink", "split"]);
-  expect(
-    screen
-      .getByRole("checkbox", { name: "Show Pin on thread rows" })
-      .getAttribute("aria-checked"),
-  ).toBe("true");
+      document.querySelectorAll<HTMLElement>("[data-row-action-slot]"),
+    ).map((slot) => slot.dataset.rowActionSlot),
+  ).toEqual(["none", "pin", "archive"]);
 });
 
-it("appends shown actions, greys out the rest at three, and frees them on removal", () => {
-  const { store } = setup();
-  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
-  expect(store.get(threadRowActionsAtom)).toEqual(["pin", "archive", "rename"]);
-  const copy = screen.getByRole("checkbox", {
-    name: "Show Copy thread link on thread rows",
-  });
-  expect(copy.hasAttribute("disabled")).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Copy thread link" }));
-  expect(store.get(threadRowActionsAtom)).toEqual(["pin", "archive", "rename"]);
-  fireEvent.click(screen.getByRole("button", { name: "Pin" }));
-  expect(store.get(threadRowActionsAtom)).toEqual(["archive", "rename"]);
-  expect(copy.hasAttribute("disabled")).toBe(false);
+it("fills, replaces, swaps, and clears slots", () => {
+  expect(assignRowActionSlot(["archive"], 0, "pin")).toEqual([
+    "pin",
+    "archive",
+  ]);
+  expect(assignRowActionSlot(["pin", "archive"], 2, "rename")).toEqual([
+    "pin",
+    "rename",
+  ]);
+  expect(assignRowActionSlot(["pin", "archive", "rename"], 0, "rename")).toEqual(
+    ["rename", "archive", "pin"],
+  );
+  expect(assignRowActionSlot(["pin", "archive"], 0, "archive")).toEqual([
+    "archive",
+    "pin",
+  ]);
+  expect(assignRowActionSlot(["pin", "archive"], 1, null)).toEqual(["archive"]);
+  expect(assignRowActionSlot(["archive"], 0, null)).toEqual(["archive"]);
 });
