@@ -184,6 +184,7 @@ export async function buildPluginServer(
       plugins: [
         zodResolutionPlugin("server", {
           hostProvidedBareZod: options.hostProvidedZod,
+          fallbackResolve: options.fallbackResolve,
         }),
         zodLocaleStubPlugin(),
         ...(options.preserveSourceModuleLocation === true
@@ -273,6 +274,7 @@ export async function buildPluginServer(
                   path: installed.path,
                   external:
                     options.externalizeBareImports === true ||
+                    installed.external ||
                     installed.path.startsWith("node:"),
                   pluginData: PLUGIN_BUNDLED_DEPENDENCY_MARK,
                 };

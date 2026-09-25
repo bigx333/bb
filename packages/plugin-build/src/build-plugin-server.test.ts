@@ -135,6 +135,103 @@ describe("plugin server build", () => {
     });
   });
 
+  describe("runtime dependency resolution", () => {
+    async function fixture(source: string) {
+      const dir = await mkdtemp(join(tmpdir(), "bb-plugin-runtime-resolve-"));
+      tempDirs.push(dir);
+      await writeFile(
+        join(dir, "package.json"),
+        JSON.stringify({
+          name: "bb-plugin-runtime-resolution",
+          version: "0.0.0",
+          bb: {
+            name: "Runtime resolution",
+            description: "Exercises runtime dependency resolution.",
+            branding: { icon: "Zap" },
+            server: "./server.ts",
+          },
+        }),
+      );
+      await writeFile(join(dir, "server.ts"), source);
+      return dir;
+    }
+
+    const sdkRequire = createRequire(
+      resolve(import.meta.dirname, "../../plugin-sdk/package.json"),
+    );
+
+    it("keeps bare and prefixed Node builtins external during runtime compilation", async () => {
+      const dir = await fixture(`
+import { readFileSync } from "fs";
+import { basename } from "path";
+import { spawn } from "child_process";
+import { fileURLToPath } from "node:url";
+export default () => [typeof readFileSync, basename("/a/b"), typeof spawn, fileURLToPath("file:///tmp/test")];
+`);
+      const { jsPath } = await buildPluginServer(
+        dir,
+        "0.0.0-test",
+        await testToolchain(),
+        {
+          format: "cjs",
+          fallbackResolve: (specifier) => sdkRequire.resolve(specifier),
+        },
+      );
+      expect(sdkRequire(jsPath).default()).toEqual([
+        "function",
+        "b",
+        "function",
+        "/tmp/test",
+      ]);
+    });
+
+    it("uses runtime fallback for missing Zod and subpaths without weakening release validation", async () => {
+      const dir = await fixture(`
+import { z } from "zod";
+import { z as mini } from "zod/mini";
+export default () => [z.string().parse("full"), mini.string().parse("mini")];
+`);
+      await expect(
+        buildPluginServer(dir, "0.0.0-test", await testToolchain()),
+      ).rejects.toThrow('could not resolve "zod"');
+      const { jsPath } = await buildPluginServer(
+        dir,
+        "0.0.0-test",
+        await testToolchain(),
+        {
+          format: "cjs",
+          fallbackResolve: (specifier) => sdkRequire.resolve(specifier),
+        },
+      );
+      expect(sdkRequire(jsPath).default()).toEqual(["full", "mini"]);
+    });
+
+    it("prefers the plugin's Zod installation to the runtime fallback", async () => {
+      const dir = await fixture(
+        'import { owner } from "zod"; export default () => owner;',
+      );
+      const zodDir = join(dir, "node_modules", "zod");
+      await mkdir(zodDir, { recursive: true });
+      await writeFile(
+        join(zodDir, "package.json"),
+        JSON.stringify({ name: "zod", main: "index.js" }),
+      );
+      await writeFile(join(zodDir, "index.js"), 'exports.owner = "plugin";');
+      const { jsPath } = await buildPluginServer(
+        dir,
+        "0.0.0-test",
+        await testToolchain(),
+        {
+          format: "cjs",
+          fallbackResolve: () => {
+            throw new Error("fallback must not replace installed Zod");
+          },
+        },
+      );
+      expect(sdkRequire(jsPath).default()).toBe("plugin");
+    });
+  });
+
   it("accepts runtime-validated server config without applying release asset validation", async () => {
     const dir = await mkdtemp(join(tmpdir(), "bb-plugin-server-runtime-"));
     tempDirs.push(dir);
