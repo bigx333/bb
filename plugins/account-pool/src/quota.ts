@@ -3,7 +3,6 @@ import type {
   AccountQuota,
   AccountSummary,
   FamilyQuota,
-  LimitWindow,
   ModelFamily,
 } from "./contracts.js";
 
@@ -223,20 +222,6 @@ export function isSharedQuotaExhausted(
   );
 }
 
-export function longestLimitWindow(
-  windows: readonly LimitWindow[],
-): LimitWindow | null {
-  let longest: LimitWindow | null = null;
-  for (const window of windows) {
-    if (
-      longest === null ||
-      (window.windowMinutes ?? 0) > (longest.windowMinutes ?? 0)
-    )
-      longest = window;
-  }
-  return longest;
-}
-
 export function isQuotaExhausted(
   quota: AccountQuota,
   family: ModelFamily,
@@ -270,7 +255,8 @@ export function governingWeeklyResetAt(
   return (
     quota.familyWeekly[family]?.resetAt ??
     quota.sevenDayResetAt ??
-    longestLimitWindow(quota.limitWindows)?.resetAt ??
+    quota.limitWindows.find((window) => window.windowMinutes === 10_080)
+      ?.resetAt ??
     null
   );
 }

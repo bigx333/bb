@@ -108,6 +108,7 @@ function config(overrides: Partial<AccountPoolConfig> = {}): AccountPoolConfig {
     anthropicUpstreamBaseUrl: "https://api.anthropic.com",
     codexUpstreamBaseUrl: "https://chatgpt.com/backend-api/codex",
     switchThreshold: 0.98,
+    routingMode: "sequential",
     parentMode: "proxy",
     ...overrides,
   };
@@ -447,6 +448,24 @@ describe("Account Pool settings", () => {
         method: "config.set",
         input: { anthropicUpstreamBaseUrl: "https://proxy.example.com" },
       }),
+    );
+  });
+
+  it("switches account selection to weekly reset mode", async () => {
+    const slot = render([account()], {
+      "config.set": () => config({ routingMode: "weekly-reset" }),
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Advanced" }));
+    const weekly = await slot.findByRole("button", { name: "Weekly reset" });
+    fireEvent.click(weekly);
+    await waitFor(() =>
+      expect(slot.rpcCalls).toContainEqual({
+        method: "config.set",
+        input: { routingMode: "weekly-reset" },
+      }),
+    );
+    await waitFor(() =>
+      expect(weekly.getAttribute("aria-pressed")).toBe("true"),
     );
   });
 

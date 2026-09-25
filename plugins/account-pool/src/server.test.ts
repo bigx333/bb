@@ -359,6 +359,7 @@ describe("Account Pool config schema", () => {
       anthropicUpstreamBaseUrl: "https://api.anthropic.com",
       codexUpstreamBaseUrl: "https://chatgpt.com/backend-api/codex",
       switchThreshold: 0.98,
+      routingMode: "sequential",
       parentMode: "proxy",
     });
     expect(
@@ -371,6 +372,10 @@ describe("Account Pool config schema", () => {
     ).toBe(false);
     expect(
       accountPoolConfigSetInputSchema.safeParse({ switchThreshold: 1.01 })
+        .success,
+    ).toBe(false);
+    expect(
+      accountPoolConfigSetInputSchema.safeParse({ routingMode: "unknown" })
         .success,
     ).toBe(false);
   });
@@ -441,6 +446,7 @@ describe("Account Pool plugin", () => {
       "codexUpstreamBaseUrl: https://chatgpt.com/backend-api/codex",
     );
     expect(cliGet.stdout).toContain("switchThreshold: 0.98");
+    expect(cliGet.stdout).toContain("routingMode: sequential");
 
     const cliSet = await host.harness.behavior.runCli([
       "config",
@@ -450,6 +456,14 @@ describe("Account Pool plugin", () => {
     ]);
     expect(cliSet.exitCode).toBe(0);
     expect(cliSet.stdout).toContain("switchThreshold: 0.75");
+    const modeSet = await host.harness.behavior.runCli([
+      "config",
+      "set",
+      "routingMode",
+      "weekly-reset",
+    ]);
+    expect(modeSet.exitCode).toBe(0);
+    expect(modeSet.stdout).toContain("routingMode: weekly-reset");
     const updated = accountPoolConfigSchema.parse(
       await host.harness.behavior.callRpc("config.set", {
         anthropicUpstreamBaseUrl: "http://127.0.0.1:9000",
@@ -459,6 +473,7 @@ describe("Account Pool plugin", () => {
       anthropicUpstreamBaseUrl: "http://127.0.0.1:9000",
       codexUpstreamBaseUrl: "https://chatgpt.com/backend-api/codex",
       switchThreshold: 0.75,
+      routingMode: "weekly-reset",
       parentMode: "proxy",
     });
     expect(
@@ -3881,6 +3896,137 @@ describe("Account Pool plugin", () => {
     );
 
     it.each(["claude", "codex"] as const)(
+      "returns %s traffic to the earliest weekly reset after its five-hour limit resets",
+      async (provider) => {
+        let now = 1_800_000_000_000;
+        let rejectPreferred = false;
+        let failPreferred = false;
+        let holdPreferred = false;
+        const attempts: string[] = [];
+        const fixture = await affinityFixture(
+          provider,
+          async (_input, init) => {
+            const headers = new Headers(init?.headers);
+            const key =
+              headers.get("x-api-key") ??
+              headers.get("authorization")?.slice(7) ??
+              "";
+            attempts.push(key);
+            const weeklySeconds = (key === "sk-first" ? 4 : 2) * 86_400;
+            const weeklyHeaders = new Headers();
+            if (provider === "claude") {
+              weeklyHeaders.set(
+                "anthropic-ratelimit-unified-7d-utilization",
+                "0.2",
+              );
+              weeklyHeaders.set(
+                "anthropic-ratelimit-unified-7d-reset",
+                String(now / 1_000 + weeklySeconds),
+              );
+            } else {
+              weeklyHeaders.set("x-codex-primary-used-percent", "20");
+              weeklyHeaders.set("x-codex-primary-window-minutes", "10080");
+              weeklyHeaders.set(
+                "x-codex-primary-reset-after-seconds",
+                String(weeklySeconds),
+              );
+            }
+            if (key === "sk-second" && rejectPreferred) {
+              const rejectedHeaders = new Headers(weeklyHeaders);
+              if (provider === "claude") {
+                rejectedHeaders.set(
+                  "anthropic-ratelimit-unified-5h-status",
+                  "rejected",
+                );
+                rejectedHeaders.set(
+                  "anthropic-ratelimit-unified-5h-reset",
+                  String(now / 1_000 + 60),
+                );
+              } else {
+                rejectedHeaders.set("x-codex-secondary-over-limit", "true");
+                rejectedHeaders.set("x-codex-secondary-window-minutes", "300");
+                rejectedHeaders.set(
+                  "x-codex-secondary-reset-after-seconds",
+                  "60",
+                );
+              }
+              return Response.json(
+                {},
+                { status: 429, headers: rejectedHeaders },
+              );
+            }
+            if (key === "sk-second" && failPreferred)
+              return Response.json({}, { status: 503, headers: weeklyHeaders });
+            if (key === "sk-second" && holdPreferred) {
+              const heldHeaders = new Headers(weeklyHeaders);
+              heldHeaders.set("retry-after", "60");
+              return Response.json({}, { status: 429, headers: heldHeaders });
+            }
+            return Response.json({ account: key }, { headers: weeklyHeaders });
+          },
+          () => now,
+        );
+        await fixture.host.harness.behavior.callRpc("config.set", {
+          routingMode: "weekly-reset",
+        });
+        const send = async (id: string) => {
+          const response = await fixture.host.harness.behavior.fetchHttp(
+            "POST",
+            provider === "claude" ? "/v1/messages" : "/v1/responses",
+            {
+              headers: { ...authHeaders(fixture.key), "thread-id": id },
+              body: provider === "claude" ? claudeBody(id) : "{}",
+            },
+          );
+          expect(response.status).toBe(200);
+          return z.object({ account: z.string() }).parse(await response.json());
+        };
+
+        expect(await send("original")).toEqual({ account: "sk-first" });
+        await fixture.host.harness.behavior.callRpc("account.disable", {
+          id: fixture.account.id,
+        });
+        expect(await send("seed-second")).toEqual({ account: "sk-second" });
+        await fixture.host.harness.behavior.callRpc("account.enable", {
+          id: fixture.account.id,
+        });
+        expect(await send("original")).toEqual({ account: "sk-second" });
+        rejectPreferred = true;
+        expect(await send("original")).toEqual({ account: "sk-first" });
+        expect(await send("original")).toEqual({ account: "sk-first" });
+        now += 60_000;
+        rejectPreferred = false;
+        expect(await send("original")).toEqual({ account: "sk-second" });
+        failPreferred = true;
+        expect(await send("original")).toEqual({ account: "sk-first" });
+        failPreferred = false;
+        expect(await send("original")).toEqual({ account: "sk-second" });
+        holdPreferred = true;
+        expect(await send("original")).toEqual({ account: "sk-first" });
+        expect(await send("original")).toEqual({ account: "sk-first" });
+        now += 60_000;
+        holdPreferred = false;
+        expect(await send("original")).toEqual({ account: "sk-second" });
+        expect(attempts).toEqual([
+          "sk-first",
+          "sk-second",
+          "sk-second",
+          "sk-second",
+          "sk-first",
+          "sk-first",
+          "sk-second",
+          "sk-second",
+          "sk-first",
+          "sk-second",
+          "sk-second",
+          "sk-first",
+          "sk-first",
+          "sk-second",
+        ]);
+      },
+    );
+
+    it.each(["claude", "codex"] as const)(
       "handles %s quota exhaustion and reset with session affinity",
       async (provider) => {
         let now = 1_800_000_000_000;
@@ -5943,12 +6089,7 @@ describe("sequential pool recovery", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     releaseUsage();
     expect(await statuses).toEqual([200, 200]);
-    expect(calls).toEqual([
-      "/usage",
-      "/usage",
-      "/v1/messages",
-      "/v1/messages",
-    ]);
+    expect(calls).toEqual(["/usage", "/usage", "/v1/messages", "/v1/messages"]);
   });
 
   it("applies reordered failover atomically without moving current conversations", async () => {

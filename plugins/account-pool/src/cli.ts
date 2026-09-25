@@ -17,6 +17,7 @@ import {
   loginCompleteInputSchema,
   modelFamilySchema,
   parentModeSchema,
+  routingModeSchema,
   tokenRotateInputSchema,
   routingSetInputSchema,
   type AccountPoolConfig,
@@ -34,9 +35,9 @@ import type { ClaudeOAuthLogin } from "./oauth-login.js";
 import type { CodexDeviceLogin } from "./codex-device-login.js";
 
 const DESCRIPTION = [
-  "Accounts run sequentially by priority, then order added. The current fallback stays active until unavailable.",
+  "Accounts run sequentially by default. Weekly-reset mode uses the eligible account with the earliest weekly reset on every request.",
   "When this bb server runs inside another bb server's thread, parent proxy routes its pooled traffic through that parent; isolate neutralises the inherited routing.",
-  "Reorder includes every account for the provider and changes the next failover sequence; existing conversations stay pinned.",
+  "Reorder includes every account for the provider and changes the next failover sequence; sequential mode pins existing conversations.",
 ].join("\n");
 
 const JSON_OPTION = {
@@ -183,6 +184,7 @@ function formatConfig(config: AccountPoolConfig): string {
     `anthropicUpstreamBaseUrl: ${config.anthropicUpstreamBaseUrl}`,
     `codexUpstreamBaseUrl: ${config.codexUpstreamBaseUrl}`,
     `switchThreshold: ${config.switchThreshold}`,
+    `routingMode: ${config.routingMode}`,
     `parentMode: ${config.parentMode}`,
   ].join("\n");
 }
@@ -218,11 +220,16 @@ function parseConfigUpdate(
       switchThreshold: Number(value),
     });
   }
+  if (key === "routingMode") {
+    return accountPoolConfigSetInputSchema.parse({
+      routingMode: routingModeSchema.parse(value),
+    });
+  }
   if (key === "parentMode") {
     return accountPoolConfigSetInputSchema.parse({ parentMode: value });
   }
   throw new PluginCliError(
-    "Config key must be anthropicUpstreamBaseUrl, codexUpstreamBaseUrl, switchThreshold, or parentMode.",
+    "Config key must be anthropicUpstreamBaseUrl, codexUpstreamBaseUrl, switchThreshold, routingMode, or parentMode.",
     { code: "invalid_value" },
   );
 }
@@ -725,13 +732,13 @@ export function registerPoolCli(
             {
               name: "key",
               description:
-                "anthropicUpstreamBaseUrl, codexUpstreamBaseUrl, switchThreshold, or parentMode",
+                "anthropicUpstreamBaseUrl, codexUpstreamBaseUrl, switchThreshold, routingMode, or parentMode",
               required: true,
             },
             {
               name: "value",
               description:
-                "HTTP(S) URL for the upstream keys, a number above 0 and at most 1 for switchThreshold, proxy or isolate for parentMode",
+                "HTTP(S) URL for the upstream keys, a number above 0 and at most 1 for switchThreshold, sequential or weekly-reset for routingMode, proxy or isolate for parentMode",
               required: true,
             },
           ],

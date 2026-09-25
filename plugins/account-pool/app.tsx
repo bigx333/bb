@@ -85,7 +85,10 @@ type DialogState =
   | { kind: "claude-login" | "codex-login" | "api-key" }
   | null;
 
-type ConfigField = Exclude<keyof AccountPoolConfig, "parentMode">;
+type ConfigField = Exclude<
+  keyof AccountPoolConfig,
+  "parentMode" | "routingMode"
+>;
 
 const PROVIDERS: Array<{
   id: PoolProvider;
@@ -1304,6 +1307,34 @@ function AccountPoolSettings() {
           </CollapsibleTrigger>
           <CollapsibleContent>
             <div className="divide-y divide-border border-t border-border">
+              <ConfigFieldRow
+                label="Account selection"
+                description="Weekly reset prefers the usable account whose applicable weekly limit resets first. It returns to that account after a shorter limit resets."
+                error={null}
+              >
+                <div className="flex flex-wrap gap-2">
+                  {(["sequential", "weekly-reset"] as const).map((mode) => (
+                    <Button
+                      key={mode}
+                      size="sm"
+                      variant={
+                        config?.routingMode === mode ? "default" : "outline"
+                      }
+                      aria-pressed={config?.routingMode === mode}
+                      disabled={config === null || pending !== null}
+                      onClick={() =>
+                        void run("routing-mode", async () => {
+                          applyConfig(
+                            await rpc.call("config.set", { routingMode: mode }),
+                          );
+                        })
+                      }
+                    >
+                      {mode === "sequential" ? "Sequential" : "Weekly reset"}
+                    </Button>
+                  ))}
+                </div>
+              </ConfigFieldRow>
               <ConfigFieldRow
                 label="Anthropic upstream base URL"
                 description="QA override for Anthropic traffic."
