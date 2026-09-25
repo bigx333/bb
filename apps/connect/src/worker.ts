@@ -204,17 +204,18 @@ const TUNNEL_DO_RETRY_DELAYS_MS = [50, 250];
 
 const UNREACHABLE_OBJECT_ERROR = "Network connection lost.";
 
-export function isRetryableTunnelDoError(error: unknown): boolean {
+function isRetryableTunnelDoError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   if (error.message.includes(TUNNEL_RESTART_REASON)) return true;
   return (
     "retryable" in error &&
     error.retryable === true &&
+    !("overloaded" in error && error.overloaded === true) &&
     !error.message.includes(UNREACHABLE_OBJECT_ERROR)
   );
 }
 
-export async function fetchTunnelDo(
+async function fetchTunnelDo(
   env: Pick<Env, "TUNNEL_DO">,
   routingKey: string,
   request: Request,

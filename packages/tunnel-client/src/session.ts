@@ -119,13 +119,15 @@ interface TunnelSessionOptions {
   resolveOrigin: (target: string | undefined) => StreamOriginResult;
   onRemoteClientsChange?: (remoteClients: number) => void;
   onActivity?: (at: number) => void;
+  monotonicNow?: () => number;
 }
 
 export class TunnelSession {
   private readonly httpStreams = new Map<number, HttpStream>();
   private readonly wsStreams = new Map<number, WsStream>();
   private lastAck = Date.now();
-  private lastHeartbeatTickAt = Date.now();
+  private lastHeartbeatTickAt = 0;
+  private stallGraceSinceAck = false;
   private heartbeat: ReturnType<typeof setInterval> | undefined;
   private remoteClientCount = 0;
   lastRemoteActivityAt: number | null = null;
@@ -138,17 +140,20 @@ export class TunnelSession {
 
   start(): void {
     const { tunnel } = this.options;
+    const monotonicNow = this.options.monotonicNow ?? (() => performance.now());
     this.lastAck = Date.now();
-    this.lastHeartbeatTickAt = this.lastAck;
+    this.lastHeartbeatTickAt = monotonicNow();
     this.heartbeat = setInterval(() => {
+      const tickAt = monotonicNow();
+      const tickGapMs = tickAt - this.lastHeartbeatTickAt;
+      this.lastHeartbeatTickAt = tickAt;
       const now = Date.now();
-      const stalledMs = now - this.lastHeartbeatTickAt;
-      this.lastHeartbeatTickAt = now;
-      if (stalledMs > HEARTBEAT_LATE_TICK_MS) {
+      if (tickGapMs > HEARTBEAT_LATE_TICK_MS && !this.stallGraceSinceAck) {
         this.options.log.warn(
-          `event loop stalled for ${Math.round(stalledMs / 1000)}s; restarting the tunnel heartbeat deadline`,
+          `event loop stalled for ${Math.round(tickGapMs / 1000)}s; restarting the tunnel heartbeat deadline`,
         );
         this.lastAck = now;
+        this.stallGraceSinceAck = true;
       } else if (now - this.lastAck > HEARTBEAT_DEADLINE_MS) {
         this.options.log.warn("tunnel heartbeat missed; reconnecting");
         tunnel.terminate();
@@ -159,7 +164,10 @@ export class TunnelSession {
 
     tunnel.on("message", (data: Buffer, isBinary: boolean) => {
       if (!isBinary) {
-        if (data.toString() === HEARTBEAT_RESPONSE) this.lastAck = Date.now();
+        if (data.toString() === HEARTBEAT_RESPONSE) {
+          this.lastAck = Date.now();
+          this.stallGraceSinceAck = false;
+        }
         return;
       }
       try {

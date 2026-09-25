@@ -33,10 +33,6 @@ const TUNNEL_RETURN_GRACE_MS = 15_000;
 const RESP_HEAD_TIMEOUT_MS = 30_000;
 const PRESENCE_INTERVAL_MS = 50_000;
 const CLEAN_CLOSE_CODE = 1000;
-const MAX_STREAM_BUFFERED_BYTES = 64 * 1024 * 1024;
-const MAX_ISOLATE_BUFFERED_BYTES = 80 * 1024 * 1024;
-
-let isolateBufferedBytes = 0;
 
 const WS_READY_STATE_OPEN = 1;
 
@@ -85,7 +81,6 @@ interface PendingHttp {
   writer: WritableStreamDefaultWriter<Uint8Array> | null;
   writeChain: Promise<void>;
   timeout: ReturnType<typeof setTimeout>;
-  bufferedBytes: number;
 }
 
 export class TunnelDO {
@@ -394,7 +389,6 @@ export class TunnelDO {
         writer: null,
         writeChain: Promise.resolve(),
         timeout,
-        bufferedBytes: 0,
       });
     });
 
@@ -497,13 +491,6 @@ export class TunnelDO {
     }
   }
 
-  private abortUnreadResponse(streamId: number, entry: PendingHttp): void {
-    const message = "visitor is reading the response too slowly";
-    releaseBufferedBytes(entry, entry.bufferedBytes);
-    void entry.writer?.abort(message).catch(() => {});
-    this.cancelHttpStream(streamId, message);
-  }
-
   private cancelHttpStream(streamId: number, message: string): void {
     const entry = this.pendingHttp.get(streamId);
     if (!entry) return;
@@ -601,19 +588,9 @@ export class TunnelDO {
         const entry = this.pendingHttp.get(frame.streamId);
         if (!entry?.writer) return;
         const copy = frame.data.slice();
-        entry.bufferedBytes += copy.byteLength;
-        isolateBufferedBytes += copy.byteLength;
-        if (
-          entry.bufferedBytes > MAX_STREAM_BUFFERED_BYTES ||
-          isolateBufferedBytes > MAX_ISOLATE_BUFFERED_BYTES
-        ) {
-          this.abortUnreadResponse(frame.streamId, entry);
-          return;
-        }
         entry.writeChain = entry.writeChain
           .then(() => entry.writer!.write(copy))
-          .catch(() => {})
-          .finally(() => releaseBufferedBytes(entry, copy.byteLength));
+          .catch(() => {});
         return;
       }
       case "body-end": {
@@ -702,12 +679,6 @@ export class TunnelDO {
   webSocketError(ws: WebSocket): void {
     this.webSocketClose(ws, 1011, "socket error");
   }
-}
-
-function releaseBufferedBytes(entry: PendingHttp, bytes: number): void {
-  const released = Math.min(bytes, entry.bufferedBytes);
-  entry.bufferedBytes -= released;
-  isolateBufferedBytes -= released;
 }
 
 function safeCloseCode(code: number): number {

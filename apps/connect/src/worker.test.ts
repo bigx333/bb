@@ -746,6 +746,25 @@ describe("gate replays through a tunnel object restart", () => {
     expect(captured).toHaveLength(1);
   });
 
+  it("does not replay onto an overloaded object", async () => {
+    const { env, ctx, captured } = failingThenOk([
+      Object.assign(new Error("Durable Object is overloaded."), {
+        retryable: true,
+        overloaded: true,
+      }),
+    ]);
+    await expect(
+      worker.fetch(
+        visitorRequest("sawyer.getbb.app", "/api/v1/threads", {
+          headers: machineHeaders,
+        }),
+        env as never,
+        ctx,
+      ),
+    ).rejects.toThrow("overloaded");
+    expect(captured).toHaveLength(1);
+  });
+
   it("replays a GET after a retryable platform error", async () => {
     const { env, ctx, captured } = failingThenOk([
       retryableError("Durable Object reset because its code was updated."),
@@ -1827,71 +1846,6 @@ function openHttpStreamId(sent: Uint8Array[], index: number): number {
 }
 
 describe("TunnelDO response relay", () => {
-  async function openRelayedResponse() {
-    const sent: Uint8Array[] = [];
-    const state = mockDoState({ protocolVersion: 1 });
-    const dob = new TunnelDO(state.api, makeDoEnv());
-    await state.restore;
-    const tunnel = fakeTunnelSocket(captureSent(sent));
-    state.addSocket(tunnel, ["tunnel"]);
-    const pending = dob.fetch(new Request("https://do.internal/big.bin"));
-    const streamId = openHttpStreamId(sent, 0);
-    dob.webSocketMessage(
-      tunnel,
-      frameBuffer({
-        type: "resp-head",
-        streamId,
-        status: 200,
-        headers: [["content-type", "application/octet-stream"]],
-      }),
-    );
-    const response = await pending;
-    const sendChunk = () =>
-      dob.webSocketMessage(
-        tunnel,
-        frameBuffer({
-          type: "body-chunk",
-          streamId,
-          data: new Uint8Array(1024 * 1024),
-        }),
-      );
-    return { sent, streamId, response, sendChunk };
-  }
-
-  function closeFrame(sent: Uint8Array[], streamId: number) {
-    return sent
-      .map(decodeFrame)
-      .find(
-        (frame) => frame.type === "close-stream" && frame.streamId === streamId,
-      );
-  }
-
-  it("cancels a response the visitor leaves unread before it can exhaust the isolate's memory", async () => {
-    const { sent, streamId, response, sendChunk } = await openRelayedResponse();
-    for (let chunk = 0; chunk < 65; chunk += 1) sendChunk();
-
-    expect(closeFrame(sent, streamId)).toMatchObject({
-      type: "close-stream",
-      streamId,
-      reason: "visitor is reading the response too slowly",
-    });
-    await expect(response.arrayBuffer()).rejects.toBeTruthy();
-  });
-
-  it("relays a large response that the visitor keeps reading", async () => {
-    const { sent, streamId, response, sendChunk } = await openRelayedResponse();
-    const reader = response.body!.getReader();
-    let received = 0;
-    for (let chunk = 0; chunk < 100; chunk += 1) {
-      sendChunk();
-      const { value } = await reader.read();
-      received += value?.byteLength ?? 0;
-    }
-    expect(received).toBe(100 * 1024 * 1024);
-    expect(closeFrame(sent, streamId)).toBeUndefined();
-    await reader.cancel();
-  });
-
   it("closes the origin stream when the visitor cancels a response body", async () => {
     const sent: Uint8Array[] = [];
     const state = mockDoState({ protocolVersion: 1 });

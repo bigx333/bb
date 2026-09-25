@@ -505,6 +505,7 @@ export class ConnectTunnel {
         code === TUNNEL_CLEAN_CLOSE_CODE &&
         reason.toString() === TUNNEL_REPLACED_CLOSE_REASON
       ) {
+        if (retryScheduled || this.stopped || this.tunnel !== tunnel) return;
         this.lastError =
           "another bb connected with this server's identity and took over bb connect";
         scheduleReconnect(this.lastError, TUNNEL_REPLACED_RETRY_MS);

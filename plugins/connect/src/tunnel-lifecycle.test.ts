@@ -254,6 +254,36 @@ describe("ConnectTunnel socket lifecycle", () => {
     }
   });
 
+  it("keeps a healthy tunnel's status when a replaced socket from a reconnect closes late", async () => {
+    vi.useFakeTimers();
+    const { fakeHost, tunnel } = createTunnelFixture();
+
+    try {
+      await tunnel.start();
+      const replaced = fakeWebSockets.instances[0]!;
+      replaced.readyState = 1;
+      replaced.emit("open");
+      tunnel.stop();
+      await tunnel.start();
+      const current = fakeWebSockets.instances[1]!;
+      current.readyState = 1;
+      current.emit("open");
+
+      replaced.emit(
+        "close",
+        1000,
+        Buffer.from("replaced by a new tunnel connection"),
+      );
+
+      expect(tunnel.status().lastError).toBeNull();
+      expect(tunnel.status().nextRetryAt).toBeNull();
+    } finally {
+      tunnel.stop();
+      vi.useRealTimers();
+      await fakeHost.harness.dispose();
+    }
+  });
+
   it("redials within seconds after an ordinary close", async () => {
     vi.useFakeTimers();
     const { fakeHost, tunnel } = createTunnelFixture();
