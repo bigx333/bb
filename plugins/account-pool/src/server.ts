@@ -67,7 +67,6 @@ export interface AccountPoolPluginOptions {
 
 const DISPOSE_INSPECTION_TIMEOUT_MS = 2_000;
 const DISPOSE_INSPECTION_TIMEOUT = Symbol("dispose-inspection-timeout");
-const HUB_BASE_PATH = "/api/v1/plugins/account-pool/http";
 
 const PROVIDER_ROUTING_ENV: Record<PoolProvider, readonly string[]> = {
   claude: ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"],
@@ -88,9 +87,10 @@ export function createAccountPoolPlugin(
   options: AccountPoolPluginOptions = {},
 ) {
   return async function accountPoolPlugin(bb: BbPluginApi): Promise<void> {
-    const storedConfig = z.record(z.string(), z.unknown()).parse(
-      (await bb.storage.kv.get("config")) ?? {},
-    );
+    const hubBasePath = `/api/v1/plugins/${bb.pluginId}/http`;
+    const storedConfig = z
+      .record(z.string(), z.unknown())
+      .parse((await bb.storage.kv.get("config")) ?? {});
     const hasRemovedSettings =
       "cacheMissDebug" in storedConfig || "cacheMissMinTokens" in storedConfig;
     delete storedConfig.cacheMissDebug;
@@ -140,6 +140,7 @@ export function createAccountPoolPlugin(
       options.fetch === undefined ? createUpstreamTransport() : null;
     const upstreamFetch = options.fetch ?? transport?.fetch;
     const hub = createHub({
+      route: hubBasePath,
       accounts,
       quotas,
       affinity: new PoolAffinityStore(db),
@@ -242,7 +243,7 @@ export function createAccountPoolPlugin(
     const markerEntries = (token: string): PoolEnvEntry[] => [
       {
         name: PARENT_URL_ENV,
-        value: { serverPath: HUB_BASE_PATH },
+        value: { serverPath: hubBasePath },
         reason: "Account Pooler hub for nested bb servers on this machine",
       },
       {
@@ -286,7 +287,7 @@ export function createAccountPoolPlugin(
       contributeFor("claude", (token) => [
         {
           name: "ANTHROPIC_BASE_URL",
-          value: { serverPath: HUB_BASE_PATH },
+          value: { serverPath: hubBasePath },
           reason: "Routed through the Account Pooler hub",
         },
         {
@@ -310,7 +311,7 @@ export function createAccountPoolPlugin(
       contributeFor("codex", (token) => [
         {
           name: "CODEX_OPENAI_BASE_URL",
-          value: { serverPath: `${HUB_BASE_PATH}/v1` },
+          value: { serverPath: `${hubBasePath}/v1` },
           reason: "Routed through the Account Pooler hub",
         },
         {

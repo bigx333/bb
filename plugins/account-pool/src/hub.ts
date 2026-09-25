@@ -37,7 +37,6 @@ import type {
 } from "./store.js";
 import { parentRequestHeaders, type ParentPool } from "./parent-pool.js";
 
-const ROUTE = "/api/v1/plugins/account-pool/http";
 const DEFAULT_REFRESH_URL = "https://platform.claude.com/v1/oauth/token";
 const DEFAULT_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 const DEFAULT_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";
@@ -64,6 +63,7 @@ const DROPPED_RESPONSE_HEADERS = new Set([
 ]);
 
 interface HubOptions {
+  route: string;
   accounts: AccountStore;
   quotas: QuotaStore;
   affinity: PoolAffinityStore;
@@ -370,7 +370,7 @@ export class AccountPoolHub {
       (left, right) => left.priority - right.priority,
     );
     return {
-      route: ROUTE,
+      route: this.options.route,
       enabledAccountCount: accounts.filter((account) => account.enabled).length,
       inFlight: this.inFlightCount(),
       accepting: this.accepting,
@@ -1258,6 +1258,7 @@ export class AccountPoolHub {
 }
 
 export function createHub(options: {
+  route?: string;
   accounts: AccountStore;
   quotas: QuotaStore;
   affinity: PoolAffinityStore;
@@ -1298,6 +1299,7 @@ export function createHub(options: {
     ],
   ]);
   return new AccountPoolHub({
+    route: options.route ?? "/api/v1/plugins/account-pool/http",
     accounts: options.accounts,
     quotas: options.quotas,
     affinity: options.affinity,
