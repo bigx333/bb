@@ -194,6 +194,7 @@ function testJwt(payload: object): string {
 
 async function createFixture(args: {
   upstreamUrl: string;
+  pluginId?: string;
   options?: AccountPoolPluginOptions;
   provider?: "claude" | "codex";
   source?: "api-key" | "import";
@@ -203,7 +204,7 @@ async function createFixture(args: {
 }): Promise<Fixture> {
   const dataDir = await mkdtemp(path.join(tmpdir(), "bb-account-pool-"));
   const host = createFakePluginHost({
-    pluginId: "account-pool",
+    pluginId: args.pluginId ?? "account-pool",
     dataDir,
     sdk: sdkStubs(),
   });
@@ -382,6 +383,31 @@ describe("Account Pool config schema", () => {
 });
 
 describe("Account Pool plugin", () => {
+  it("uses its installed plugin id for provider and parent routes", async () => {
+    const fixture = await createFixture({
+      upstreamUrl: "http://127.0.0.1:9000",
+      pluginId: "account-pool-weekly",
+    });
+    const status = await fixture.host.harness.behavior.runCli([
+      "status",
+      "--json",
+    ]);
+    expect(statusReportSchema.parse(JSON.parse(status.stdout)).route).toBe(
+      "/api/v1/plugins/account-pool-weekly/http",
+    );
+    const entries = await fixture.host.harness.behavior.resolveProviderEnv(
+      "claude-code",
+      { threadId: "thread-one", projectId: "project-one", hostId: "host-one" },
+    );
+    expect(
+      entries.find((entry) => entry.name === "ANTHROPIC_BASE_URL")?.value,
+    ).toEqual({ serverPath: "/api/v1/plugins/account-pool-weekly/http" });
+    expect(
+      entries.find((entry) => entry.name === "BB_ACCOUNT_POOL_PARENT_URL")
+        ?.value,
+    ).toEqual({ serverPath: "/api/v1/plugins/account-pool-weekly/http" });
+  });
+
   it("removes persisted cache debugging settings while preserving pool configuration across reloads", async () => {
     const dataDir = await mkdtemp(
       path.join(tmpdir(), "bb-account-pool-config-upgrade-"),
