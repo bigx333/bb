@@ -791,7 +791,8 @@ export class AccountPoolHub {
     );
     signal.throwIfAborted();
     const now = this.options.now();
-    const threshold = this.options.getSettings().switchThreshold;
+    const settings = this.options.getSettings();
+    const threshold = settings.switchThreshold;
     const available = accounts
       .filter((account) => account.provider === provider && account.enabled)
       .map((account) => ({
@@ -810,6 +811,18 @@ export class AccountPoolHub {
     const candidates = unattempted.filter(
       ({ quota }) => quota.heldUntil === null || quota.heldUntil <= now,
     );
+    if (settings.routingMode === "weekly-reset") {
+      const weeklyReset = (quota: AccountQuota) =>
+        governingWeeklyResetAt(quota, family) ?? Number.POSITIVE_INFINITY;
+      const selected = candidates.sort((left, right) => {
+        const leftReset = weeklyReset(left.quota);
+        const rightReset = weeklyReset(right.quota);
+        return leftReset === rightReset ? 0 : leftReset < rightReset ? -1 : 1;
+      })[0];
+      return selected === undefined
+        ? null
+        : { ...selected, keepAffinity: false, accept: () => {} };
+    }
     let binding =
       affinityKey === null ? undefined : this.affinityBindings.get(affinityKey);
     const boundAccountId =

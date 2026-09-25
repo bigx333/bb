@@ -21,7 +21,7 @@ bb pool account refresh <id>
 bb pool status [--json]
 bb pool routing <claude|codex> [--off]
 bb pool config
-bb pool config set <anthropicUpstreamBaseUrl|codexUpstreamBaseUrl|switchThreshold|parentMode> <value>
+bb pool config set <anthropicUpstreamBaseUrl|codexUpstreamBaseUrl|switchThreshold|routingMode|parentMode> <value>
 bb pool parent [proxy|isolate]
 bb pool token rotate --machine <id-or-name>
 bb pool bypass <thread-id> [--off]
@@ -70,8 +70,8 @@ inspect the full routing configuration and
 `bb pool config set <key> <value>` to update one value. The upstream URL keys
 are QA-only overrides; `switchThreshold` must be greater than 0 and at most 1.
 
-Accounts run sequentially per provider: lower priority numbers first, with ties
-following the order accounts were added. New conversations use the current
+By default, accounts run sequentially per provider: lower priority numbers
+first, with ties following the order accounts were added. New conversations use the current
 account until it reaches the switch threshold or fails; the pool then advances
 to the next eligible account and wraps at the end. It keeps using that fallback
 even when an earlier account recovers. Existing conversations stay pinned while
@@ -81,6 +81,16 @@ conversations can advance. A model-family limit detours only requests for that
 family without moving the session's main pin or the provider cursor. The cursor
 and session pins survive hub restarts. Session pins expire after 30 idle minutes,
 and the pool retains the 4,096 most recently used pins.
+
+Set `bb pool config set routingMode weekly-reset` to choose the eligible account
+with the earliest applicable weekly reset on every request. The requested Claude
+model family's weekly reset takes precedence over its shared weekly reset;
+Codex uses its seven-day window. Accounts without a known weekly reset
+follow accounts with one, using priority order as the tie-breaker. Disabled,
+exhausted, held, and errored accounts are skipped. Conversation pins do not
+override this mode, so traffic returns to the preferred account on the next
+request after its shorter limit or hold expires. Use
+`bb pool config set routingMode sequential` to restore the default behavior.
 
 Drag an account’s handle in Account Pooler settings (or focus the handle and use
 Space, arrow keys, and Space again), or

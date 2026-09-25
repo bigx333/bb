@@ -3,7 +3,7 @@ Keep a Claude Code or Codex thread running when one account hits its limit. The 
 ## What you get
 
 - A pool of Claude and Codex accounts, added by importing the login already on the machine, signing in through the browser, or pasting an Anthropic API key.
-- Accounts run one after another in priority order, with ties following the order added. New conversations stay on the current fallback even when an earlier account recovers. Existing conversations keep their own account until it becomes unavailable.
+- Sequential routing runs accounts in priority order and keeps a current fallback and conversation pins. Weekly reset routing uses the eligible account with the earliest applicable weekly reset on every request, returning to it when a shorter limit resets.
 - Drag handles set the account order within each provider in settings (keyboard: Space to pick up, arrow keys to move, Space to drop, Escape to cancel), with the same operation available through `bb pool account reorder <claude|codex> <id>...`.
 - Live limit windows per account and model family in the plugin's settings page, and the same numbers from `bb pool status`.
 - A routing switch per provider and a bypass per thread, so one thread can go straight to its own credentials.
@@ -13,6 +13,8 @@ Keep a Claude Code or Codex thread running when one account hits its limit. The 
 The hub runs inside BB and serves an Anthropic Messages endpoint and an OpenAI Responses endpoint. With routing on, BB hands the Claude Code or Codex process a base URL that points at the hub and a token scoped to that machine, and the provider reports **Proxied** in its health row. An account is skipped for a request when it is at or above the switch threshold or in error. The threshold defaults to 98 percent of a window. A refusal first rechecks exhausted accounts, so upgrades apply next turn. Account secrets stay in the BB data directory on the server machine, and the hub refreshes them in the background.
 
 The pool waits once on the same account for short temporary rate limits. Longer holds return Retry-After for pinned conversations while new conversations can advance. A model-family limit detours requests for that family without moving the session’s main pin or the provider cursor. The pool commits a new account after a successful response; a failed attempt across every account retains the previous binding. The current account and session pins survive hub restarts. Session pins expire after 30 idle minutes, with the 4,096 most recently used pins retained.
+
+Select **Weekly reset** under Advanced settings, or run `bb pool config set routingMode weekly-reset`, to rank usable accounts by their applicable weekly reset. This mode ignores conversation pins; a five-hour limit, longer temporary hold, or error moves the request to another account, and the preferred account is selected again once usable. Short temporary limits can wait once on the same account. Accounts with no known weekly reset come after dated accounts, in priority order. Use `sequential` to restore the default.
 
 The pooler owns its upstream HTTP connections and uses HTTP/1.1, so a broken HTTP/2 session in the server's shared fetch dispatcher does not strand pooled requests. The transport honors standard proxy environment variables and is disposed on plugin unload. This does not add request replay; existing account-fallback rules still apply. Pooled request connection failures log a known error code when available, without request bodies, credentials, URLs, or raw exception messages.
 

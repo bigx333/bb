@@ -4,6 +4,7 @@ export const DEFAULT_ACCOUNT_POOL_CONFIG = {
   anthropicUpstreamBaseUrl: "https://api.anthropic.com",
   codexUpstreamBaseUrl: "https://chatgpt.com/backend-api/codex",
   switchThreshold: 0.98,
+  routingMode: "sequential" as const,
   parentMode: "proxy" as const,
 };
 
@@ -23,6 +24,7 @@ const switchThresholdSchema = z
 
 export const parentModeSchema = z.enum(["proxy", "isolate"]);
 export type ParentMode = z.infer<typeof parentModeSchema>;
+export const routingModeSchema = z.enum(["sequential", "weekly-reset"]);
 
 export const accountPoolConfigSchema = z
   .object({
@@ -34,6 +36,9 @@ export const accountPoolConfigSchema = z
     ),
     switchThreshold: switchThresholdSchema.default(
       DEFAULT_ACCOUNT_POOL_CONFIG.switchThreshold,
+    ),
+    routingMode: routingModeSchema.default(
+      DEFAULT_ACCOUNT_POOL_CONFIG.routingMode,
     ),
     parentMode: parentModeSchema.default(
       DEFAULT_ACCOUNT_POOL_CONFIG.parentMode,
@@ -48,6 +53,7 @@ export const accountPoolConfigSetInputSchema = z
     anthropicUpstreamBaseUrl: httpUrlSchema.optional(),
     codexUpstreamBaseUrl: httpUrlSchema.optional(),
     switchThreshold: switchThresholdSchema.optional(),
+    routingMode: routingModeSchema.optional(),
     parentMode: parentModeSchema.optional(),
   })
   .strict();

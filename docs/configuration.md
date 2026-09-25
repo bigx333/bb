@@ -1038,8 +1038,8 @@ without disabling that account for other families. Imported and newly signed-in
 accounts retain their Anthropic account UUID, and the hub aligns a present
 `metadata.user_id` account component with the selected account.
 
-Accounts run sequentially per provider: lower priority numbers first, with ties
-following the order accounts were added. New conversations use the current
+By default, accounts run sequentially per provider: lower priority numbers
+first, with ties following the order accounts were added. New conversations use the current
 account until it reaches the switch threshold or fails; the pool then advances
 to the next eligible account and wraps at the end. It keeps using that fallback
 even when an earlier account recovers. Existing conversations stay pinned while
@@ -1050,6 +1050,15 @@ family without moving the session's main pin or the provider cursor. The cursor
 and session pins survive hub restarts. Session pins expire after 30 idle minutes,
 and the pool retains the 4,096 most recently used pins.
 
+Set `routingMode` to `weekly-reset` to select the eligible account with the
+earliest applicable weekly reset on every request. The requested Claude model
+family's weekly reset takes precedence over its shared weekly reset, and Codex
+uses its seven-day window. Accounts with no known weekly reset follow
+dated accounts in priority order. An exhausted quota window, longer hold,
+disabled account, or error causes fallback. Short temporary limits can wait
+once on the same account. The next request returns to the preferred account as
+soon as it becomes eligible. This mode ignores conversation pins.
+
 Use the up/down arrows in Account Pooler settings, or
 `bb pool account reorder <claude|codex> <id>...`, to set the complete order for
 one provider. Include disabled accounts too. Reordering changes the next failover
@@ -1057,7 +1066,7 @@ sequence without moving the current account. `bb pool account priority <id> <n>`
 sets an individual priority; the same operations are available through the
 `account.reorder` and `account.setPriority` plugin RPCs.
 
-Three plugin-owned configuration values control routing. `switchThreshold` is
+The plugin-owned `switchThreshold` is
 the shared or requested model-family quota fraction at which an account stops
 receiving matching traffic and defaults to `0.98`.
 `anthropicUpstreamBaseUrl` defaults to `https://api.anthropic.com` and
@@ -1070,6 +1079,7 @@ with a controlled fake upstream. Inspect or update the full plugin KV-backed con
 ```sh
 bb pool config
 bb pool config set switchThreshold 0.98
+bb pool config set routingMode weekly-reset
 bb pool config set anthropicUpstreamBaseUrl http://127.0.0.1:9000
 bb pool config set codexUpstreamBaseUrl http://127.0.0.1:9001
 ```
